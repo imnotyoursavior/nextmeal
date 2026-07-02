@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NextMeal — What should you eat next?</title>
+<style>
+  :root {
+    --bg: #faf7f2;
+    --card: #ffffff;
+    --ink: #2b2620;
+    --muted: #7a7268;
+    --accent: #e2711d;
+    --accent-soft: #fdeadd;
+    --green: #4a7c59;
+    --green-soft: #e4efe7;
+    --blue: #3d6b99;
+    --blue-soft: #e3ecf5;
+    --purple: #7d5ba6;
+    --purple-soft: #eee7f6;
+    --border: #e8e2d8;
+    --radius: 14px;
+    --shadow: 0 2px 10px rgba(43,38,32,.07);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 20px 80px; }
+  header { text-align: center; margin: 18px 0 30px; }
+  header h1 { font-size: 2.1rem; margin: 0 0 6px; letter-spacing: -.5px; }
+  header h1 .logo { color: var(--accent); }
+  header p { color: var(--muted); margin: 0; font-size: 1.05rem; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px;
+    margin-bottom: 22px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 1.2rem; }
+  .card h2 .step { color: var(--accent); }
+  .card .sub { color: var(--muted); font-size: .92rem; margin: 0 0 16px; }
+
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 720px) { .upload-grid { grid-template-columns: 1fr; } }
+
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    background: #fdfcfa;
+  }
+  .dropzone.has-data { border-color: var(--green); background: var(--green-soft); }
+  .dropzone label.zone-title { font-weight: 600; display: block; margin-bottom: 4px; }
+  .dropzone .hint { font-size: .82rem; color: var(--muted); margin-bottom: 10px; }
+  .dropzone textarea {
+    width: 100%; min-height: 110px; resize: vertical;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px; font-family: Consolas, monospace; font-size: .78rem;
+    background: #fff;
+  }
+  .dropzone input[type=file] { font-size: .85rem; margin-bottom: 8px; max-width: 100%; }
+  .file-status { font-size: .82rem; color: var(--green); font-weight: 600; min-height: 1.2em; }
+
+  .btn-row { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
+  button.primary {
+    background: var(--accent); color: #fff; border: none;
+    padding: 12px 26px; border-radius: 10px; font-size: 1rem; font-weight: 600;
+    cursor: pointer; transition: filter .15s;
+  }
+  button.primary:hover { filter: brightness(1.08); }
+  button.ghost {
+    background: transparent; color: var(--accent); border: 1.5px solid var(--accent);
+    padding: 11px 20px; border-radius: 10px; font-size: .95rem; font-weight: 600; cursor: pointer;
+  }
+  button.ghost:hover { background: var(--accent-soft); }
+  .error-msg { color: #b3402a; font-weight: 600; font-size: .9rem; }
+
+  /* Results */
+  #results { display: none; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat {
+    background: #fdfcfa; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .stat .num { font-size: 1.35rem; font-weight: 700; }
+  .stat .lbl { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+
+  .cuisine-bars { margin-top: 8px; }
+  .cuisine-bar { display: flex; align-items: center; gap: 10px; margin: 7px 0; }
+  .cuisine-bar .name { width: 130px; font-size: .9rem; font-weight: 600; text-transform: capitalize; }
+  .cuisine-bar .track { flex: 1; height: 12px; background: #f0ebe2; border-radius: 6px; overflow: hidden; }
+  .cuisine-bar .fill { height: 100%; background: linear-gradient(90deg, var(--accent), #f0a05a); border-radius: 6px; }
+  .cuisine-bar .pct { width: 42px; text-align: right; font-size: .82rem; color: var(--muted); }
+
+  .pantry-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip {
+    background: var(--green-soft); color: var(--green); border-radius: 999px;
+    padding: 4px 12px; font-size: .84rem; font-weight: 600; text-transform: capitalize;
+  }
+
+  .lane-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .lane-grid { grid-template-columns: 1fr; } }
+  .meal-card {
+    border: 1px solid var(--border); border-radius: 12px; padding: 18px;
+    display: flex; flex-direction: column; gap: 8px; background: #fffdfb;
+  }
+  .lane-tag {
+    align-self: flex-start; font-size: .76rem; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; border-radius: 6px; padding: 3px 10px;
+  }
+  .lane-cook   { background: var(--accent-soft); color: var(--accent); }
+  .lane-simple { background: var(--green-soft); color: var(--green); }
+  .lane-order  { background: var(--purple-soft); color: var(--purple); }
+  .lane-out    { background: var(--blue-soft); color: var(--blue); }
+  .meal-card h3 { margin: 2px 0 0; font-size: 1.15rem; }
+  .meal-meta { font-size: .84rem; color: var(--muted); }
+  .meal-why { font-size: .9rem; }
+  .match-note { font-size: .86rem; color: var(--green); font-weight: 600; }
+  .meal-card details { margin-top: 4px; }
+  .meal-card summary { cursor: pointer; font-weight: 600; color: var(--accent); font-size: .9rem; }
+  .meal-card ol { margin: 8px 0 0; padding-left: 20px; font-size: .89rem; }
+  .meal-card ol li { margin-bottom: 4px; }
+  .ext-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .ext-links a {
+    font-size: .86rem; font-weight: 600; text-decoration: none;
+    color: var(--blue); border: 1px solid var(--blue); border-radius: 8px; padding: 5px 12px;
+  }
+  .ext-links a:hover { background: var(--blue-soft); }
+  .lane-exp { background: #dff2f0; color: #00796b; }
+
+  button.log-btn {
+    align-self: flex-start; margin-top: 6px; background: transparent;
+    border: 1.5px solid var(--green); color: var(--green); border-radius: 8px;
+    padding: 6px 14px; font-size: .86rem; font-weight: 600; cursor: pointer;
+  }
+  button.log-btn:hover { background: var(--green-soft); }
+  button.log-btn:disabled { opacity: .75; cursor: default; background: var(--green-soft); }
+
+  .hist-list { list-style: none; margin: 8px 0 0; padding: 0; }
+  .hist-list li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: .92rem; }
+  .hist-list .when { color: var(--muted); font-size: .8rem; margin-left: auto; white-space: nowrap; }
+  .hist-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: .88rem; color: var(--muted); }
+  .hist-stats b { color: var(--ink); }
+  button.danger {
+    background: transparent; border: 1.5px solid #b3402a; color: #b3402a;
+    border-radius: 8px; padding: 6px 14px; font-size: .84rem; font-weight: 600;
+    cursor: pointer; margin-top: 14px;
+  }
+  button.danger:hover { background: #fdeae5; }
+  .ocr-note { font-size: .8rem; color: var(--purple); font-weight: 600; min-height: 1.1em; margin-bottom: 6px; }
+
+  .more-ideas { margin-top: 6px; }
+  .more-ideas li { margin-bottom: 5px; font-size: .92rem; }
+  .more-ideas .cost { color: var(--muted); font-size: .84rem; }
+
+  footer { text-align: center; color: var(--muted); font-size: .82rem; margin-top: 10px; }
+  .privacy { background: var(--green-soft); color: var(--green); border-radius: 8px; padding: 8px 14px; display: inline-block; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="logo">🍽️ NextMeal</span></h1>
+    <p>Upload 30 days of spending &amp; receipts — get meal ideas you'll actually want.</p>
+  </header>
+
+  <!-- STEP 1: Inputs -->
+  <section class="card" id="input-card">
+    <h2><span class="step">Step 1</span> · Add your food data</h2>
+    <p class="sub">Everything is analyzed locally in your browser — nothing is uploaded to a server.</p>
+    <div class="upload-grid">
+      <div class="dropzone" id="zone-statement">
+        <label class="zone-title">🏦 Bank statement (CSV)</label>
+        <div class="hint">Export from your bank: columns for date, description, amount. Header names are auto-detected.</div>
+        <input type="file" id="file-statement" accept=".csv,.txt">
+        <div class="file-status" id="status-statement"></div>
+        <textarea id="paste-statement" placeholder="…or paste CSV here, e.g.&#10;Date,Description,Amount&#10;06/24/2026,KROGER #442,-54.23"></textarea>
+      </div>
+      <div class="dropzone" id="zone-receipts">
+        <label class="zone-title">🧾 Grocery receipts (text or photos)</label>
+        <div class="hint">Paste receipt text, upload .txt files, or upload <b>photos of receipts</b> (JPG/PNG) — they're read on-device with OCR, nothing is uploaded.</div>
+        <input type="file" id="file-receipts" accept=".txt,.csv,.png,.jpg,.jpeg,.webp,.bmp,image/*" multiple>
+        <div class="ocr-note" id="ocr-note"></div>
+        <div class="file-status" id="status-receipts"></div>
+        <textarea id="paste-receipts" placeholder="…or paste receipt text here, e.g.&#10;KROGER 06/24/2026&#10;CHKN BREAST 1.5LB   7.49&#10;SHRD CHEDDAR        2.99"></textarea>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="primary" id="btn-analyze">Suggest my next meal →</button>
+      <button class="ghost" id="btn-sample">Try with sample data</button>
+      <span class="error-msg" id="error-msg"></span>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <div id="results">
+    <section class="card">
+      <h2>📊 Your last 30 days of food spending</h2>
+      <p class="sub" id="window-note"></p>
+      <div class="stat-grid" id="stat-grid"></div>
+    </section>
+
+    <section class="card">
+      <h2>😋 Your taste profile</h2>
+      <p class="sub">Cuisines ranked by how often (and how recently) you chose them.</p>
+      <div class="cuisine-bars" id="cuisine-bars"></div>
+      <div id="pantry-section">
+        <p class="sub" style="margin-top:16px">Ingredients spotted on your receipts (your working pantry):</p>
+        <div class="pantry-chips" id="pantry-chips"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>🥇 Your next meal — pick a lane</h2>
+      <p class="sub">Four options matched to your tastes, pantry, and budget.</p>
+      <div class="lane-grid" id="lane-grid"></div>
+    </section>
+
+    <section class="card">
+      <h2>💡 More ideas from your profile</h2>
+      <ul class="more-ideas" id="more-ideas"></ul>
+    </section>
+  </div>
+
+  <!-- MEAL HISTORY (persists across visits) -->
+  <section class="card" id="history-card" style="display:none">
+    <h2>📖 Your meal history</h2>
+    <p class="sub">Saved automatically in this browser. Meals you log shape future suggestions: recent repeats rest for a week, cuisines you actually eat get boosted, and you'll get nudged toward similar-but-new foods.</p>
+    <ul class="hist-list" id="hist-list"></ul>
+    <div class="hist-stats" id="hist-stats"></div>
+    <button class="danger" id="btn-clear-history">Clear history</button>
+  </section>
+
+  <footer>
+    <span class="privacy">🔒 100% local — your financial data, receipt photos, and meal history never leave this device.</span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* ================= Merchant & cuisine knowledge ================= */
+
+const GROCERY_KEYWORDS = ["kroger","walmart","wal-mart","wm supercenter","aldi","publix","safeway","albertsons","heb","h-e-b","whole foods","wholefds","trader joe","costco","sams club","sam's club","meijer","wegmans","food lion","giant eagle","stop & shop","sprouts","winco","frys food","ralphs","vons","lidl","save-a-lot","piggly","food 4 less","grocery","supermarket","market basket","fresh market","instacart","target"];
+const DELIVERY_KEYWORDS = ["doordash","dd *","uber eats","ubereats","uber *eats","grubhub","postmates","seamless","caviar","favor delivery"];
+const RESTAURANT_KEYWORDS = ["mcdonald","burger king","wendy","chick-fil-a","chickfila","taco bell","chipotle","qdoba","panera","subway","jimmy john","five guys","kfc","popeyes","pizza hut","domino","papa john","little caesar","olive garden","applebee","chili's","chilis","outback","texas roadhouse","panda express","pf chang","starbucks","dunkin","sonic drive","arby","dairy queen","ihop","waffle house","denny","buffalo wild wings","wingstop","culver","in-n-out","whataburger","jack in the box","shake shack","sweetgreen","cava","noodles & co","restaurant","cafe","caffe","grill","bistro","taqueria","pizzeria","sushi","thai","pho ","ramen","bbq","diner","cantina","brewery","kitchen","eatery","tavern","deli"];
+
+const CUISINE_TOKENS = {
+  mexican:       ["taco","chipotle","qdoba","burrito","cantina","taqueria","azteca","mexic","quesadilla","salsa","el pollo"],
+  italian:       ["pizza","pasta","italian","olive garden","domino","papa john","little caesar","pizzeria","trattoria","napoli"],
+  chinese:       ["panda express","wok","china","chinese","pf chang","szechuan","dumpling"],
+  japanese:      ["sushi","ramen","hibachi","teriyaki","poke","izakaya","tokyo"],
+  thai:          ["thai","pad thai","bangkok"],
+  vietnamese:    ["pho ","banh","saigon","viet"],
+  indian:        ["india","curry","tandoor","masala","biryani"],
+  american:      ["burger","grill","bbq","wings","steak","mcdonald","wendy","five guys","culver","whataburger","shake shack","in-n-out","diner","chick-fil-a","kfc","popeyes","waffle","ihop","denny","sonic","arby","jack in the box"],
+  mediterranean: ["cava","gyro","kebab","falafel","mediterr","greek","shawarma","hummus"],
+  breakfast:     ["starbucks","dunkin","coffee","bagel","donut","doughnut","brunch"]
+};
+
+/* Receipt item name → pantry ingredient + cuisine hints */
+const INGREDIENT_DICT = [
+  { key:"chicken",      pats:["chicken","chkn","brst","breast","thigh","drumstick","rotisserie"], cuisines:["mexican","american","asian"] },
+  { key:"ground beef",  pats:["ground beef","grnd beef","gr beef","hamburger meat","80/20"], cuisines:["mexican","american","italian"] },
+  { key:"salmon",       pats:["salmon"], cuisines:["japanese"] },
+  { key:"shrimp",       pats:["shrimp","prawn"], cuisines:["italian","asian"] },
+  { key:"bacon",        pats:["bacon"], cuisines:["american","breakfast"] },
+  { key:"sausage",      pats:["sausage","brat","chorizo"], cuisines:["american","mexican"] },
+  { key:"eggs",         pats:["egg"], cuisines:["breakfast"] },
+  { key:"milk",         pats:["milk","2% mlk","whl mlk"], cuisines:["breakfast"] },
+  { key:"cheese",       pats:["cheese","chz","cheddar","mozz","monterey","colby","parm shred"], cuisines:["mexican","italian","american"] },
+  { key:"parmesan",     pats:["parmesan","parm reg"], cuisines:["italian"] },
+  { key:"tortillas",    pats:["tortilla","tortl"], cuisines:["mexican"] },
+  { key:"pasta",        pats:["pasta","spaghetti","penne","rigatoni","fettuc","macaroni","linguin"], cuisines:["italian"] },
+  { key:"marinara",     pats:["marinara","pasta sauce","tomato sauce","ragu","prego"], cuisines:["italian"] },
+  { key:"rice",         pats:["rice"], cuisines:["asian","mexican","indian"] },
+  { key:"black beans",  pats:["black bean","refried","pinto"], cuisines:["mexican"] },
+  { key:"salsa",        pats:["salsa","pico de"], cuisines:["mexican"] },
+  { key:"avocado",      pats:["avocado","avoc","guac"], cuisines:["mexican"] },
+  { key:"onion",        pats:["onion"], cuisines:[] },
+  { key:"bell pepper",  pats:["bell pepper","bell pep","peppers"], cuisines:["mexican","asian"] },
+  { key:"tomato",       pats:["tomato","roma tom"], cuisines:["italian"] },
+  { key:"lettuce",      pats:["lettuce","romaine","iceberg","spring mix"], cuisines:[] },
+  { key:"spinach",      pats:["spinach"], cuisines:[] },
+  { key:"broccoli",     pats:["broccoli","brocc"], cuisines:["asian"] },
+  { key:"potato",       pats:["potato","russet","yukon"], cuisines:["american"] },
+  { key:"bread",        pats:["bread","loaf","buns","hamburger bun","brioche","sourdough"], cuisines:["american"] },
+  { key:"butter",       pats:["butter"], cuisines:[] },
+  { key:"garlic",       pats:["garlic"], cuisines:["italian","asian"] },
+  { key:"cilantro",     pats:["cilantro"], cuisines:["mexican","thai","vietnamese"] },
+  { key:"lime",         pats:["lime"], cuisines:["mexican","thai"] },
+  { key:"soy sauce",    pats:["soy sauce","soy sce"], cuisines:["asian","japanese"] },
+  { key:"olive oil",    pats:["olive oil","evoo"], cuisines:["italian","mediterranean"] },
+  { key:"yogurt",       pats:["yogurt","yoghurt","greek yog"], cuisines:["mediterranean","breakfast"] },
+  { key:"oats",         pats:["oats","oatmeal"], cuisines:["breakfast"] },
+  { key:"banana",       pats:["banana"], cuisines:["breakfast"] },
+  { key:"apple",        pats:["apple","gala","fuji","honeycrisp"], cuisines:[] },
+  { key:"frozen pizza", pats:["frozen pizza","frz pizza","digiorno","red baron","tombstone"], cuisines:["italian"] },
+  { key:"ramen noodles",pats:["ramen","instant noodle"], cuisines:["japanese"] },
+  { key:"curry paste",  pats:["curry paste","curry pwd","curry powder","garam"], cuisines:["thai","indian"] },
+  { key:"coconut milk", pats:["coconut milk","coconut mlk"], cuisines:["thai","indian"] },
+  { key:"tortilla chips",pats:["tort chips","tortilla chip","tostitos"], cuisines:["mexican"] },
+  { key:"pesto",        pats:["pesto"], cuisines:["italian"] },
+  { key:"feta",         pats:["feta"], cuisines:["mediterranean"] },
+  { key:"cucumber",     pats:["cucumber","cuke"], cuisines:["mediterranean"] },
+  { key:"hummus",       pats:["hummus"], cuisines:["mediterranean"] },
+  { key:"canned tomatoes", pats:["diced tom","crushed tom","canned tom"], cuisines:["italian"] },
+  { key:"chili beans",  pats:["chili bean","kidney bean"], cuisines:["american"] }
+];
+
+/* ================= Meal database ================= */
+/* effort: 1 = keep-it-simple, 2 = normal cook */
+const MEALS = [
+  { name:"Chicken Tacos", cuisine:"mexican", effort:2, time:"25 min", cost:9,
+    ingredients:["chicken","tortillas","cheese","salsa","lettuce","lime"],
+    steps:["Dice chicken, season with chili powder + cumin, sauté 7–8 min until cooked through.","Warm tortillas in a dry pan 30 sec per side.","Fill with chicken, cheese, salsa, shredded lettuce; finish with lime."] },
+  { name:"Burrito Bowls", cuisine:"mexican", effort:2, time:"30 min", cost:10,
+    ingredients:["chicken","rice","black beans","salsa","cheese","avocado","cilantro"],
+    steps:["Cook rice; stir in lime juice and chopped cilantro.","Sauté seasoned chicken; warm black beans.","Assemble bowls: rice, beans, chicken, salsa, cheese, avocado."] },
+  { name:"Cheese Quesadillas", cuisine:"mexican", effort:1, time:"10 min", cost:5,
+    ingredients:["tortillas","cheese","salsa"],
+    steps:["Butter a pan on medium heat, lay down a tortilla.","Cover with cheese (add any leftover chicken), top with second tortilla.","Flip when golden, ~2 min per side. Slice, dip in salsa."] },
+  { name:"Spaghetti Marinara", cuisine:"italian", effort:1, time:"20 min", cost:6,
+    ingredients:["pasta","marinara","parmesan","garlic","olive oil"],
+    steps:["Boil salted water, cook pasta per package.","Warm marinara with a little sautéed garlic and olive oil.","Toss pasta in sauce, top with parmesan."] },
+  { name:"Chicken Parmesan", cuisine:"italian", effort:2, time:"40 min", cost:12,
+    ingredients:["chicken","marinara","cheese","parmesan","pasta","bread"],
+    steps:["Pound chicken thin, coat in breadcrumbs (blitz bread) + parmesan.","Pan-fry 3–4 min per side until golden.","Top with marinara + cheese, broil 3 min. Serve over pasta."] },
+  { name:"One-Pan Pesto Pasta", cuisine:"italian", effort:1, time:"18 min", cost:7,
+    ingredients:["pasta","pesto","parmesan","tomato","spinach"],
+    steps:["Cook pasta; reserve a splash of pasta water.","Toss hot pasta with pesto, halved tomatoes, and spinach (it wilts).","Loosen with pasta water, top with parmesan."] },
+  { name:"Chicken Stir-Fry", cuisine:"asian", effort:2, time:"25 min", cost:9,
+    ingredients:["chicken","broccoli","bell pepper","soy sauce","garlic","rice"],
+    steps:["Start rice. Slice chicken thin, stir-fry on high 4–5 min.","Add broccoli + bell pepper, 3 more min.","Sauce: soy sauce, garlic, splash of water + cornstarch. Toss and serve over rice."] },
+  { name:"Leftover Fried Rice", cuisine:"asian", effort:1, time:"15 min", cost:5,
+    ingredients:["rice","eggs","soy sauce","onion","garlic"],
+    steps:["Scramble eggs in a hot oiled pan, set aside.","Fry onion + garlic, add day-old rice, press flat and let it crisp.","Stir in soy sauce and eggs. Any leftover protein or veg goes in too."] },
+  { name:"Teriyaki Salmon Bowl", cuisine:"japanese", effort:2, time:"25 min", cost:12,
+    ingredients:["salmon","rice","soy sauce","broccoli"],
+    steps:["Start rice. Simmer soy sauce + sugar + splash of water into a quick teriyaki glaze.","Pan-sear salmon 3–4 min per side, brushing with glaze.","Serve over rice with steamed broccoli."] },
+  { name:"Thai Coconut Curry", cuisine:"thai", effort:2, time:"30 min", cost:10,
+    ingredients:["chicken","curry paste","coconut milk","bell pepper","rice","lime"],
+    steps:["Start rice. Fry curry paste 1 min, add coconut milk.","Simmer chicken + bell pepper in the sauce 12 min.","Finish with lime; serve over rice."] },
+  { name:"Weeknight Chicken Curry", cuisine:"indian", effort:2, time:"35 min", cost:9,
+    ingredients:["chicken","curry paste","onion","canned tomatoes","rice","garlic"],
+    steps:["Sauté onion + garlic, bloom curry powder 1 min.","Add chicken and canned tomatoes, simmer 20 min.","Serve over rice."] },
+  { name:"Smash Burgers at Home", cuisine:"american", effort:2, time:"20 min", cost:8,
+    ingredients:["ground beef","bread","cheese","lettuce","tomato","onion"],
+    steps:["Form loose beef balls, smash flat on a ripping-hot pan.","Season, flip at 2 min, add cheese.","Toast buns in the beef fat; stack with lettuce, tomato, onion."] },
+  { name:"Sheet-Pan Chicken & Veg", cuisine:"american", effort:1, time:"35 min (10 hands-on)", cost:8,
+    ingredients:["chicken","potato","broccoli","olive oil","garlic"],
+    steps:["Toss everything with oil, garlic, salt, pepper on one sheet pan.","Roast at 425°F for 25–30 min.","That's it. One pan, one wash-up."] },
+  { name:"BLT Night", cuisine:"american", effort:1, time:"12 min", cost:6,
+    ingredients:["bacon","bread","lettuce","tomato"],
+    steps:["Crisp bacon in a pan or oven.","Toast bread; mayo both slices.","Stack bacon, lettuce, tomato. Chips on the side, done."] },
+  { name:"Grilled Cheese + Tomato Soup", cuisine:"american", effort:1, time:"15 min", cost:5,
+    ingredients:["bread","cheese","butter","canned tomatoes"],
+    steps:["Blend canned tomatoes with butter + salt, simmer 10 min.","Butter bread, low-and-slow grill the sandwich until deep golden.","Dunk. Repeat."] },
+  { name:"Breakfast-for-Dinner Omelette", cuisine:"breakfast", effort:1, time:"10 min", cost:4,
+    ingredients:["eggs","cheese","spinach","butter","bread"],
+    steps:["Whisk 3 eggs, pour into buttered nonstick pan on medium-low.","Add cheese + spinach as it sets, fold in half.","Toast on the side."] },
+  { name:"Greek Chicken Bowls", cuisine:"mediterranean", effort:2, time:"30 min", cost:10,
+    ingredients:["chicken","rice","feta","cucumber","tomato","yogurt","garlic"],
+    steps:["Marinate chicken in yogurt, garlic, lemon, oregano (even 10 min helps); sear.","Chop cucumber + tomato salad.","Bowl it over rice with feta and a yogurt drizzle."] },
+  { name:"Shrimp Scampi", cuisine:"italian", effort:2, time:"20 min", cost:11,
+    ingredients:["shrimp","pasta","garlic","butter","olive oil","lime"],
+    steps:["Cook pasta. Sauté lots of garlic in butter + oil.","Add shrimp, 2 min per side; splash of pasta water + citrus.","Toss with pasta."] },
+  { name:"Loaded Baked Potato Bar", cuisine:"american", effort:1, time:"45 min (5 hands-on)", cost:5,
+    ingredients:["potato","cheese","bacon","butter"],
+    steps:["Bake potatoes at 425°F ~45 min (or microwave 8 min).","Crisp bacon bits while you wait.","Split, load with butter, cheese, bacon, whatever's in the fridge."] },
+  { name:"Weeknight Chili", cuisine:"american", effort:2, time:"40 min", cost:8,
+    ingredients:["ground beef","chili beans","canned tomatoes","onion","cheese","tortilla chips"],
+    steps:["Brown beef with onion; add chili powder + cumin.","Add beans + canned tomatoes, simmer 25 min.","Bowl with cheese and chips for scooping."] },
+  { name:"Upgraded Ramen", cuisine:"japanese", effort:1, time:"12 min", cost:4,
+    ingredients:["ramen noodles","eggs","spinach","soy sauce"],
+    steps:["Cook ramen; soft-boil an egg (6.5 min) alongside.","Stir spinach into the hot broth to wilt.","Top with the jammy egg and a dash of soy."] }
+];
+
+/* ================= Cuisine adjacency (for "try something new" nudges) ================= */
+/* neighbor cuisine -> why it's a natural next step from the key cuisine */
+const CUISINE_NEIGHBORS = {
+  mexican:       { thai: "lime, cilantro, and chile heat", indian: "warm spice blends and rice", mediterranean: "grilled meat + fresh toppings" },
+  italian:       { mediterranean: "olive oil, tomatoes, and herbs", american: "the same comfort-food energy" },
+  american:      { mexican: "grilled, cheesy comfort", mediterranean: "grilled meat with fresh sides" },
+  chinese:       { thai: "wok heat and aromatics", japanese: "soy-driven umami", vietnamese: "noodle-bowl comfort" },
+  japanese:      { thai: "the fresh-plus-savory balance", vietnamese: "clean broths and noodles", chinese: "soy and umami" },
+  thai:          { vietnamese: "herbs, lime, and noodles", indian: "coconut and curry", mexican: "heat and citrus" },
+  vietnamese:    { thai: "lime, herbs, and chile", japanese: "clean broths" },
+  indian:        { thai: "coconut curries", mediterranean: "yogurt and warm spices" },
+  mediterranean: { italian: "olive oil and herbs", indian: "yogurt marinades and spice", mexican: "fresh-plus-grilled" },
+  breakfast:     { american: "griddle comfort any hour" },
+  asian:         { thai: "aromatics and heat", japanese: "umami depth" }
+};
+
+/* ================= Meal history (localStorage, saved by default) ================= */
+
+const HIST_KEY = "nextmeal.history.v1";
+function loadHistory() {
+  try { const h = JSON.parse(localStorage.getItem(HIST_KEY)); return Array.isArray(h) ? h : []; }
+  catch { return []; }
+}
+function saveHistory(h) { localStorage.setItem(HIST_KEY, JSON.stringify(h)); }
+function logMeal(entry) {
+  const h = loadHistory();
+  h.push({ ...entry, ts: Date.now() });
+  saveHistory(h);
+  renderHistory();
+}
+function historyStats(history) {
+  const byMeal = new Map();          // meal name -> most recent timestamp
+  const cuisineCount = {};           // cuisine -> times eaten
+  history.forEach(e => {
+    byMeal.set(e.name, Math.max(byMeal.get(e.name) || 0, e.ts));
+    if (e.cuisine) cuisineCount[e.cuisine] = (cuisineCount[e.cuisine] || 0) + 1;
+  });
+  return { byMeal, cuisineCount };
+}
+
+/* ================= Parsing helpers ================= */
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i+1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.some(f => f.trim() !== "")) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.some(f => f.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+function parseDate(s) {
+  s = (s || "").trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);            // 2026-06-24
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);    // 06/24/2026 or 6-24-26
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return new Date(y, +m[1]-1, +m[2]); }
+  const d = new Date(s);                                       // "Jun 24, 2026"
+  return isNaN(d) ? null : d;
+}
+
+function parseAmount(s) {
+  if (s == null) return NaN;
+  s = String(s).trim();
+  const neg = /^\(.*\)$/.test(s);
+  s = s.replace(/[()$,\s]/g, "");
+  let v = parseFloat(s);
+  if (isNaN(v)) return NaN;
+  if (neg) v = -v;
+  return v;
+}
+
+/* Detect date/description/amount columns from a header row or by sniffing data */
+function detectColumns(rows) {
+  const header = rows[0].map(h => h.toLowerCase().trim());
+  const find = (...names) => header.findIndex(h => names.some(n => h.includes(n)));
+  let dateIdx = find("date", "posted");
+  let descIdx = find("description", "payee", "merchant", "details", "memo", "name");
+  let amtIdx  = find("amount", "debit", "charge");
+  let hasHeader = dateIdx !== -1 || descIdx !== -1 || amtIdx !== -1;
+
+  if (!hasHeader) {
+    // sniff first data row: date-parsable col, numeric col, longest text col
+    const r = rows[0];
+    dateIdx = r.findIndex(f => parseDate(f) !== null);
+    amtIdx = -1;
+    for (let i = r.length - 1; i >= 0; i--) {
+      if (i !== dateIdx && !isNaN(parseAmount(r[i])) && /\d/.test(r[i])) { amtIdx = i; break; }
+    }
+    let best = -1, bestLen = -1;
+    r.forEach((f, i) => { if (i !== dateIdx && i !== amtIdx && f.trim().length > bestLen) { bestLen = f.trim().length; best = i; } });
+    descIdx = best;
+  }
+  return { dateIdx, descIdx, amtIdx, dataStart: hasHeader ? 1 : 0 };
+}
+
+function parseStatement(text) {
+  const rows = parseCSV(text.trim());
+  if (rows.length === 0) return [];
+  const { dateIdx, descIdx, amtIdx, dataStart } = detectColumns(rows);
+  if (dateIdx === -1 || descIdx === -1 || amtIdx === -1) return [];
+  const txns = [];
+  for (let i = dataStart; i < rows.length; i++) {
+    const r = rows[i];
+    const date = parseDate(r[dateIdx]);
+    const desc = (r[descIdx] || "").trim();
+    let amt = parseAmount(r[amtIdx]);
+    if (!date || !desc || isNaN(amt) || amt === 0) continue;
+    txns.push({ date, desc, amount: Math.abs(amt) });
+  }
+  return txns;
+}
+
+function categorizeTxn(desc) {
+  const d = desc.toLowerCase();
+  if (DELIVERY_KEYWORDS.some(k => d.includes(k))) return "delivery";
+  if (GROCERY_KEYWORDS.some(k => d.includes(k))) return "grocery";
+  if (RESTAURANT_KEYWORDS.some(k => d.includes(k))) return "restaurant";
+  for (const tokens of Object.values(CUISINE_TOKENS)) {
+    if (tokens.some(t => d.includes(t))) return "restaurant";
+  }
+  return "other";
+}
+
+function cuisinesOf(desc) {
+  const d = desc.toLowerCase();
+  const out = [];
+  for (const [cuisine, tokens] of Object.entries(CUISINE_TOKENS)) {
+    if (tokens.some(t => d.includes(t))) out.push(cuisine);
+  }
+  return out;
+}
+
+/* Receipt text → { items:[{name, price, ingredient}], merchant } */
+const RECEIPT_SKIP = /subtotal|total|tax|change|tender|visa|debit|credit|cash|balance|savings|coupon|loyalty|rewards|thank|approval|auth|card|account|item.?count|qty/i;
+function parseReceipts(text) {
+  const items = [];
+  for (const rawLine of text.split(/\n/)) {
+    const line = rawLine.trim();
+    if (!line || RECEIPT_SKIP.test(line)) continue;
+    const m = line.match(/^(.*?[a-zA-Z].*?)\s+\$?(\d{1,4}\.\d{2})\s*[A-Za-z*]{0,2}\s*$/);
+    if (!m) continue;
+    const name = m[1].trim();
+    const price = parseFloat(m[2]);
+    const lower = name.toLowerCase();
+    let ingredient = null;
+    for (const ing of INGREDIENT_DICT) {
+      if (ing.pats.some(p => lower.includes(p))) { ingredient = ing; break; }
+    }
+    items.push({ name, price, ingredient });
+  }
+  return items;
+}
+
+/* ================= Analysis ================= */
+
+function analyze(txnsAll, receiptItems) {
+  // 30-day window anchored at the most recent transaction (or today)
+  const anchor = txnsAll.length
+    ? new Date(Math.max(...txnsAll.map(t => t.date.getTime())))
+    : new Date();
+  const windowStart = new Date(anchor);
+  windowStart.setDate(windowStart.getDate() - 29);
+
+  const txns = txnsAll
+    .filter(t => t.date >= windowStart && t.date <= anchor)
+    .map(t => ({ ...t, category: categorizeTxn(t.desc) }))
+    .filter(t => t.category !== "other");
+
+  const daysAgo = d => Math.round((anchor - d) / 86400000);
+  const recencyW = d => 1 + 0.5 * Math.max(0, (10 - daysAgo(d)) / 10);
+
+  const byCat = { grocery: [], restaurant: [], delivery: [] };
+  txns.forEach(t => byCat[t.category].push(t));
+  const sum = a => a.reduce((s, t) => s + t.amount, 0);
+  const avg = a => a.length ? sum(a) / a.length : 0;
+
+  // Cuisine affinity
+  const cuisineScores = {};
+  const bump = (c, w) => { cuisineScores[c] = (cuisineScores[c] || 0) + w; };
+  txns.forEach(t => {
+    const cs = cuisinesOf(t.desc);
+    const base = t.category === "restaurant" ? 3 : t.category === "delivery" ? 2.5 : 0.6;
+    cs.forEach(c => bump(c, base * recencyW(t.date)));
+  });
+  receiptItems.forEach(it => {
+    if (it.ingredient) it.ingredient.cuisines.forEach(c => bump(c, 0.8));
+  });
+  // "asian" umbrella: chinese/japanese/thai/vietnamese feed it lightly
+  ["chinese","japanese","thai","vietnamese"].forEach(c => {
+    if (cuisineScores[c]) bump("asian", cuisineScores[c] * 0.5);
+  });
+
+  // Pantry
+  const pantry = new Map(); // key -> count
+  receiptItems.forEach(it => {
+    if (it.ingredient) pantry.set(it.ingredient.key, (pantry.get(it.ingredient.key) || 0) + 1);
+  });
+
+  // Frequent merchants
+  const merchCount = {};
+  txns.forEach(t => {
+    if (t.category !== "grocery") {
+      const key = t.desc.replace(/[#*]\s*\d+.*$/, "").replace(/\s{2,}/g, " ").trim();
+      merchCount[key] = merchCount[key] || { n: 0, total: 0, cat: t.category };
+      merchCount[key].n++; merchCount[key].total += t.amount;
+    }
+  });
+  const topMerchants = Object.entries(merchCount).sort((a, b) => b[1].n - a[1].n);
+
+  return {
+    anchor, windowStart, txns, byCat,
+    totals: { grocery: sum(byCat.grocery), restaurant: sum(byCat.restaurant), delivery: sum(byCat.delivery) },
+    avgTickets: { restaurant: avg(byCat.restaurant), delivery: avg(byCat.delivery) },
+    cuisineScores, pantry, topMerchants
+  };
+}
+
+function scoreMeal(meal, a, hs) {
+  const maxCuisine = Math.max(1, ...Object.values(a.cuisineScores));
+  const cuisineAff = (a.cuisineScores[meal.cuisine] || 0) / maxCuisine;
+  const have = meal.ingredients.filter(i => a.pantry.has(i));
+  const pantryRatio = a.pantry.size ? have.length / meal.ingredients.length : 0;
+  let score = 2.2 * cuisineAff + 2.8 * pantryRatio;
+
+  // learned preference: cuisines the user actually logged eating get boosted
+  const histMax = Math.max(1, ...Object.values(hs.cuisineCount));
+  score += 0.7 * ((hs.cuisineCount[meal.cuisine] || 0) / histMax);
+
+  // cooldown: rest meals eaten recently so suggestions don't repeat
+  const last = hs.byMeal.get(meal.name);
+  let resting = false;
+  if (last) {
+    const days = (Date.now() - last) / 86400000;
+    if (days < 7) { score -= 2.2; resting = true; }
+    else if (days < 14) score -= 0.9;
+  }
+  return { score, have, cuisineAff, resting, eatenBefore: !!last };
+}
+
+/* ================= Rendering ================= */
+
+const $ = id => document.getElementById(id);
+const fmt$ = n => "$" + n.toFixed(2);
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function render(a) {
+  $("results").style.display = "block";
+
+  const opts = { month: "short", day: "numeric" };
+  $("window-note").textContent =
+    `Window: ${a.windowStart.toLocaleDateString(undefined, opts)} – ${a.anchor.toLocaleDateString(undefined, {...opts, year:"numeric"})}` +
+    ` · ${a.txns.length} food transactions found`;
+
+  const totalFood = a.totals.grocery + a.totals.restaurant + a.totals.delivery;
+  $("stat-grid").innerHTML = [
+    { num: fmt$(totalFood), lbl: "total food spend" },
+    { num: fmt$(a.totals.grocery), lbl: `groceries (${a.byCat.grocery.length} trips)` },
+    { num: fmt$(a.totals.restaurant), lbl: `restaurants (${a.byCat.restaurant.length} visits)` },
+    { num: fmt$(a.totals.delivery), lbl: `delivery (${a.byCat.delivery.length} orders)` },
+    { num: a.avgTickets.restaurant ? fmt$(a.avgTickets.restaurant) : "—", lbl: "avg restaurant ticket" },
+    { num: a.avgTickets.delivery ? fmt$(a.avgTickets.delivery) : "—", lbl: "avg delivery order" }
+  ].map(s => `<div class="stat"><div class="num">${s.num}</div><div class="lbl">${s.lbl}</div></div>`).join("");
+
+  // Cuisine bars (skip umbrella "asian" in display if its children shown)
+  const entries = Object.entries(a.cuisineScores)
+    .filter(([c]) => c !== "asian")
+    .sort((x, y) => y[1] - x[1]).slice(0, 6);
+  const maxScore = entries.length ? entries[0][1] : 1;
+  $("cuisine-bars").innerHTML = entries.length
+    ? entries.map(([c, s]) =>
+        `<div class="cuisine-bar"><div class="name">${cap(c)}</div>
+         <div class="track"><div class="fill" style="width:${Math.round(100 * s / maxScore)}%"></div></div>
+         <div class="pct">${Math.round(100 * s / maxScore)}%</div></div>`).join("")
+    : `<p class="sub">No cuisine signals found — add more transactions or receipts.</p>`;
+
+  // Pantry chips
+  const pantryKeys = [...a.pantry.keys()];
+  $("pantry-section").style.display = pantryKeys.length ? "block" : "none";
+  $("pantry-chips").innerHTML = pantryKeys.map(k => `<span class="chip">${esc(k)}</span>`).join("");
+
+  // ------- Lane picks -------
+  const hs = historyStats(loadHistory());
+  const ranked = MEALS.map(m => ({ meal: m, ...scoreMeal(m, a, hs) })).sort((x, y) => y.score - x.score);
+  const used = new Set();
+  const pick = pred => {
+    const hit = ranked.find(r => !used.has(r.meal.name) && pred(r));
+    if (hit) used.add(hit.meal.name);
+    return hit;
+  };
+
+  const cook = pick(r => r.meal.effort === 2);
+  const simple = pick(r => r.meal.effort === 1);
+
+  const whyFor = r => {
+    const parts = [];
+    if (r.cuisineAff > 0.15) parts.push(`you've picked ${cap(r.meal.cuisine)} ${countCuisine(a, r.meal.cuisine)}× this month`);
+    if (r.have.length >= 2) parts.push(`your receipts show ${r.have.slice(0, 3).join(", ")}${r.have.length > 3 ? "…" : ""} already on hand`);
+    return parts.length ? "Because " + parts.join(", and ") + "." : "A solid, low-risk pick to round out your month.";
+  };
+
+  const logBtn = (name, cuisine, lane, label) =>
+    `<button class="log-btn" data-name="${esc(name)}" data-cuisine="${esc(cuisine)}" data-lane="${lane}">${label}</button>`;
+
+  const mealCard = (laneClass, laneLabel, r, customWhy) => `
+    <div class="meal-card">
+      <span class="lane-tag ${laneClass}">${laneLabel}</span>
+      <h3>${esc(r.meal.name)}</h3>
+      <div class="meal-meta">${cap(r.meal.cuisine)} · ${r.meal.time} · ~${fmt$(r.meal.cost)}/serving-set</div>
+      ${r.have.length ? `<div class="match-note">✓ You already have ${r.have.length} of ${r.meal.ingredients.length} ingredients</div>` : ""}
+      <div class="meal-why">${customWhy || whyFor(r)}</div>
+      <details><summary>Show recipe (${r.meal.steps.length} steps)</summary>
+        <div class="meal-meta" style="margin-top:6px">Needs: ${r.meal.ingredients.map(i => a.pantry.has(i) ? `<b>${esc(i)}✓</b>` : esc(i)).join(", ")}</div>
+        <ol>${r.meal.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>
+      </details>
+      ${logBtn(r.meal.name, r.meal.cuisine, laneClass === "lane-exp" ? "experiment" : laneClass === "lane-simple" ? "simple" : "cook", "🍴 I made this — save to history")}
+    </div>`;
+
+  // Order-in: favorite delivery cuisine (fall back to restaurant signals)
+  const topCuisine = entries.length ? entries[0][0] : "american";
+  const favDeliv = a.topMerchants.find(([, v]) => v.cat === "delivery");
+  const favRest = a.topMerchants.find(([, v]) => v.cat === "restaurant");
+  const delivBudget = a.avgTickets.delivery || a.avgTickets.restaurant || 20;
+  const q = encodeURIComponent(topCuisine + " food");
+  const orderCard = `
+    <div class="meal-card">
+      <span class="lane-tag lane-order">🛵 Order in</span>
+      <h3>${cap(topCuisine)} delivery night</h3>
+      <div class="meal-meta">Your average delivery order runs ${fmt$(delivBudget)} — budget that.</div>
+      <div class="meal-why">${favDeliv
+        ? `You've ordered via <b>${esc(favDeliv[0])}</b> ${favDeliv[1].n}× this month, and ${cap(topCuisine)} tops your taste profile.`
+        : `${cap(topCuisine)} tops your taste profile — search your delivery app for a top-rated spot.`}</div>
+      <div class="ext-links">
+        <a href="https://www.ubereats.com/search?q=${q}" target="_blank" rel="noopener">Uber Eats ↗</a>
+        <a href="https://www.doordash.com/search/store/${q}" target="_blank" rel="noopener">DoorDash ↗</a>
+      </div>
+      ${logBtn("Ordered in: " + cap(topCuisine), topCuisine, "order", "🍴 I ordered this — save to history")}
+    </div>`;
+
+  const restBudget = a.avgTickets.restaurant || 15;
+  const outCard = `
+    <div class="meal-card">
+      <span class="lane-tag lane-out">🍽️ Eat out</span>
+      <h3>Affordable ${cap(topCuisine)} near you</h3>
+      <div class="meal-meta">Target spend: under ${fmt$(Math.ceil(restBudget))} (your average sit-down ticket).</div>
+      <div class="meal-why">${favRest
+        ? `<b>${esc(favRest[0])}</b> is your most-visited spot (${favRest[1].n}× , avg ${fmt$(favRest[1].total / favRest[1].n)}) — go back, or try somewhere new below.`
+        : `Based on your restaurant history, a budget-friendly ${cap(topCuisine)} spot fits your pattern.`}</div>
+      <div class="ext-links">
+        <a href="https://www.google.com/maps/search/${encodeURIComponent("affordable " + topCuisine + " restaurant near me")}" target="_blank" rel="noopener">Find on Maps ↗</a>
+        <a href="https://www.yelp.com/search?find_desc=${encodeURIComponent("cheap " + topCuisine)}" target="_blank" rel="noopener">Yelp ↗</a>
+      </div>
+      ${logBtn("Ate out: " + cap(topCuisine), topCuisine, "out", "🍴 I ate out — save to history")}
+    </div>`;
+
+  // Experiment lane: a similar-but-new cuisine the user hasn't logged yet
+  const neighborMap = CUISINE_NEIGHBORS[topCuisine] || {};
+  let exp = ranked.find(r => !used.has(r.meal.name) && !r.eatenBefore &&
+    r.meal.cuisine !== topCuisine && neighborMap[r.meal.cuisine]);
+  let expWhy;
+  if (exp) {
+    expWhy = `You clearly love ${cap(topCuisine)} — ${cap(exp.meal.cuisine)} shares ${neighborMap[exp.meal.cuisine]}, and you haven't logged this one yet. Stretch a little.`;
+  } else {
+    exp = ranked.find(r => !used.has(r.meal.name) && !r.eatenBefore && r.meal.cuisine !== topCuisine);
+    if (exp) expWhy = `Something you haven't logged yet — a change of pace from your usual ${cap(topCuisine)} without leaving your comfort zone.`;
+  }
+  if (exp) used.add(exp.meal.name);
+
+  $("lane-grid").innerHTML =
+    (cook ? mealCard("lane-cook", "🍳 Cook it", cook) : "") +
+    (simple ? mealCard("lane-simple", "⏱️ Keep it simple", simple) : "") +
+    orderCard + outCard +
+    (exp ? mealCard("lane-exp", "🧪 Try something new", exp, expWhy) : "");
+
+  // More ideas
+  $("more-ideas").innerHTML = ranked
+    .filter(r => !used.has(r.meal.name)).slice(0, 5)
+    .map(r => `<li><b>${esc(r.meal.name)}</b> — ${cap(r.meal.cuisine)}, ${r.meal.time}
+      ${r.resting ? `<span class="cost">(resting — you just had it)</span>` : ""}
+      ${r.have.length ? `<span class="match-note">(${r.have.length}/${r.meal.ingredients.length} ingredients on hand)</span>` : ""}
+      <span class="cost">~${fmt$(r.meal.cost)}</span></li>`).join("");
+
+  $("results").scrollIntoView({ behavior: "smooth" });
+}
+
+function countCuisine(a, cuisine) {
+  return a.txns.filter(t => (t.category === "restaurant" || t.category === "delivery") &&
+    cuisinesOf(t.desc).includes(cuisine)).length || 1;
+}
+
+/* ================= Sample data (dates relative to today) ================= */
+
+function sampleData() {
+  const d = off => {
+    const t = new Date(); t.setDate(t.getDate() - off);
+    return `${String(t.getMonth() + 1).padStart(2, "0")}/${String(t.getDate()).padStart(2, "0")}/${t.getFullYear()}`;
+  };
+  const statement = [
+    "Date,Description,Amount",
+    `${d(1)},CHIPOTLE #1204 ONLINE,-13.85`,
+    `${d(2)},KROGER #442,-61.34`,
+    `${d(3)},DD *DOORDASH TACOS EL REY,-24.60`,
+    `${d(4)},STARBUCKS #9921,-6.45`,
+    `${d(6)},LA CANTINA MEXICAN GRILL,-32.18`,
+    `${d(7)},SHELL OIL 5573,-41.20`,
+    `${d(8)},KROGER #442,-54.23`,
+    `${d(9)},DOMINO'S PIZZA 7823,-19.99`,
+    `${d(11)},DD *DOORDASH PHO SAIGON,-27.35`,
+    `${d(12)},NETFLIX.COM,-15.49`,
+    `${d(13)},TAQUERIA GUADALAJARA,-18.40`,
+    `${d(14)},TRADER JOE'S #58,-47.88`,
+    `${d(16)},CHIPOTLE #1204,-12.90`,
+    `${d(17)},AMAZON MKTPLACE,-28.47`,
+    `${d(18)},UBER EATS PENDING,-31.22`,
+    `${d(19)},KROGER #442,-72.10`,
+    `${d(21)},TACO BELL #30021,-9.87`,
+    `${d(22)},OLIVE GARDEN 00417,-41.75`,
+    `${d(24)},KROGER #442,-58.66`,
+    `${d(25)},STARBUCKS #9921,-5.95`,
+    `${d(27)},EL POLLO FELIZ RESTAURANT,-22.14`,
+    `${d(28)},COSTCO WHSE #0644,-96.42`,
+    `${d(33)},PANDA EXPRESS #2214,-11.45`,   // outside 30-day window on purpose
+  ].join("\n");
+
+  const receipts = [
+    `KROGER #442 ${d(2)}`,
+    "CHKN BREAST 1.8LB      8.12",
+    "TORTILLA FLOUR 10CT    2.79",
+    "SHRD CHEDDAR CHEESE    3.49",
+    "SALSA MEDIUM 16OZ      2.99",
+    "AVOCADO EA x3          2.97",
+    "LIME EA x4             1.16",
+    "CILANTRO BUNCH         0.89",
+    "BLACK BEANS CAN x2     1.98",
+    "JASMINE RICE 2LB       3.29",
+    "ROMAINE LETTUCE        2.49",
+    "ROMA TOMATO 1.2LB      2.15",
+    "YELLOW ONION 2LB       1.89",
+    "GARLIC BULB x2         1.30",
+    "2% MILK GAL            3.19",
+    "LG EGGS 18CT           4.39",
+    "TOTAL                 61.34",
+    "",
+    `TRADER JOE'S #58 ${d(14)}`,
+    "SPAGHETTI 1LB          1.29",
+    "MARINARA SAUCE         2.49",
+    "PARMESAN WEDGE         4.99",
+    "OLIVE OIL 500ML        5.99",
+    "BABY SPINACH           2.29",
+    "BELL PEPPER TRIO       3.49",
+    "GROUND BEEF 80/20 1LB  5.49",
+    "SOURDOUGH LOAF         3.99",
+    "BUTTER SALTED          3.79",
+    "GREEK YOGURT 32OZ      4.49",
+    "BANANAS 2LB            1.18",
+    "TOTAL                 47.88"
+  ].join("\n");
+
+  return { statement, receipts };
+}
+
+/* ================= OCR (Tesseract.js, runs entirely on-device) ================= */
+
+const abs = p => new URL(p, location.href).href;
+let ocrWorkerPromise = null;
+let ocrStatusCb = null;
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error("Failed to load " + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = (async () => {
+      // prefer the locally vendored engine (works offline); fall back to CDN
+      let local = false;
+      try { local = (await fetch("vendor/tesseract.min.js", { method: "HEAD" })).ok; } catch {}
+      const p = local ? {
+        lib: abs("vendor/tesseract.min.js"), workerPath: abs("vendor/worker.min.js"),
+        corePath: abs("vendor"), langPath: abs("vendor")
+      } : {
+        lib: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js",
+        workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
+        corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5",
+        langPath: "https://tessdata.projectnaptha.com/4.0.0"
+      };
+      if (!window.Tesseract) await loadScript(p.lib);
+      return Tesseract.createWorker("eng", 1, {
+        workerPath: p.workerPath, corePath: p.corePath, langPath: p.langPath,
+        logger: m => {
+          if (ocrStatusCb && m.status === "recognizing text")
+            ocrStatusCb(`Reading receipt… ${Math.round(m.progress * 100)}%`);
+        }
+      });
+    })().catch(err => { ocrWorkerPromise = null; throw err; });
+  }
+  return ocrWorkerPromise;
+}
+
+async function ocrImages(files, onStatus) {
+  ocrStatusCb = onStatus;
+  const worker = await getOcrWorker();
+  const texts = [];
+  for (let i = 0; i < files.length; i++) {
+    onStatus(`Reading receipt photo ${i + 1} of ${files.length}…`);
+    const { data } = await worker.recognize(files[i]);
+    texts.push(data.text);
+  }
+  ocrStatusCb = null;
+  return texts;
+}
+
+/* ================= Wiring ================= */
+
+let uploadedStatement = "";
+let uploadedReceipts = "";
+
+const isImage = f => (f.type && f.type.startsWith("image/")) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name);
+
+$("file-statement").addEventListener("change", async e => {
+  if (!e.target.files.length) return;
+  uploadedStatement = (await Promise.all([...e.target.files].map(f => f.text()))).join("\n\n");
+  $("status-statement").textContent = `✓ ${e.target.files[0].name} loaded`;
+  $("zone-statement").classList.add("has-data");
+});
+
+$("file-receipts").addEventListener("change", async e => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  const images = files.filter(isImage);
+  const textFiles = files.filter(f => !isImage(f));
+  const texts = await Promise.all(textFiles.map(f => f.text()));
+
+  if (images.length) {
+    try {
+      const ocrTexts = await ocrImages(images, s => { $("ocr-note").textContent = s; });
+      texts.push(...ocrTexts);
+      $("ocr-note").textContent = `✓ ${images.length} photo(s) read with on-device OCR — extracted text added below (edit if anything looks off).`;
+    } catch (err) {
+      console.error(err);
+      $("ocr-note").textContent = "⚠ OCR failed to load — paste the receipt text manually instead.";
+    }
+  }
+
+  uploadedReceipts = texts.join("\n\n");
+  // surface extracted text in the textarea so the user can review/correct it
+  const box = $("paste-receipts");
+  box.value = (box.value.trim() ? box.value.trimEnd() + "\n\n" : "") + uploadedReceipts;
+  $("status-receipts").textContent = `✓ ${files.length} file(s) loaded`;
+  $("zone-receipts").classList.add("has-data");
+});
+
+$("btn-sample").addEventListener("click", () => {
+  const s = sampleData();
+  $("paste-statement").value = s.statement;
+  $("paste-receipts").value = s.receipts;
+  $("zone-statement").classList.add("has-data");
+  $("zone-receipts").classList.add("has-data");
+  $("error-msg").textContent = "";
+});
+
+$("btn-analyze").addEventListener("click", () => {
+  const stmtText = ($("paste-statement").value.trim()) || uploadedStatement;
+  const rcptText = ($("paste-receipts").value.trim()) || uploadedReceipts;
+  $("error-msg").textContent = "";
+
+  if (!stmtText) {
+    $("error-msg").textContent = "Add a bank statement first (or click “Try with sample data”).";
+    return;
+  }
+  const txns = parseStatement(stmtText);
+  if (txns.length === 0) {
+    $("error-msg").textContent = "Couldn't find date / description / amount columns in that statement.";
+    return;
+  }
+  const receiptItems = rcptText ? parseReceipts(rcptText) : [];
+  const a = analyze(txns, receiptItems);
+  if (a.txns.length === 0) {
+    $("error-msg").textContent = "No food-related transactions found in the last 30 days of that statement.";
+    return;
+  }
+  render(a);
+});
+
+/* ---- meal history UI ---- */
+
+const LANE_ICONS = { cook: "🍳", simple: "⏱️", order: "🛵", out: "🍽️", experiment: "🧪" };
+
+function renderHistory() {
+  const h = loadHistory();
+  $("history-card").style.display = h.length ? "block" : "none";
+  if (!h.length) return;
+
+  $("hist-list").innerHTML = [...h].reverse().slice(0, 10).map(e => `
+    <li><span>${LANE_ICONS[e.lane] || "🍴"}</span>
+      <b>${esc(e.name)}</b>
+      <span style="color:var(--muted); text-transform:capitalize">${esc(e.cuisine || "")}</span>
+      <span class="when">${new Date(e.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+    </li>`).join("");
+
+  const cuisines = new Set(h.map(e => e.cuisine).filter(Boolean));
+  const experiments = h.filter(e => e.lane === "experiment").length;
+  $("hist-stats").innerHTML =
+    `<span><b>${h.length}</b> meal${h.length === 1 ? "" : "s"} logged</span>` +
+    `<span><b>${cuisines.size}</b> cuisine${cuisines.size === 1 ? "" : "s"} explored</span>` +
+    `<span><b>${experiments}</b> 🧪 experiment${experiments === 1 ? "" : "s"} tried</span>`;
+}
+
+$("lane-grid").addEventListener("click", e => {
+  const b = e.target.closest("button.log-btn");
+  if (!b || b.disabled) return;
+  logMeal({ name: b.dataset.name, cuisine: b.dataset.cuisine, lane: b.dataset.lane });
+  b.disabled = true;
+  b.textContent = "Saved to history ✓ (shapes your next suggestions)";
+});
+
+$("btn-clear-history").addEventListener("click", e => {
+  const b = e.target;
+  if (b.dataset.armed) {
+    localStorage.removeItem(HIST_KEY);
+    delete b.dataset.armed;
+    b.textContent = "Clear history";
+    renderHistory();
+  } else {
+    b.dataset.armed = "1";
+    b.textContent = "Really clear all meal history? Click again to confirm";
+    setTimeout(() => { delete b.dataset.armed; b.textContent = "Clear history"; }, 4000);
+  }
+});
+
+renderHistory();
+</script>
+</body>
+</html>
