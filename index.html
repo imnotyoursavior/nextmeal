@@ -178,6 +178,17 @@
   .assign-row .price { color: var(--muted); font-size: .82rem; }
   .assign-row select { margin-left: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: .86rem; background: #fff; }
 
+  /* Fridge/pantry photo */
+  .chip.photo { background: var(--purple-soft); color: var(--purple); }
+  .check-chip {
+    display: inline-flex; gap: 6px; align-items: center; background: #fff;
+    border: 1.5px solid var(--border); border-radius: 999px; padding: 5px 12px;
+    font-size: .86rem; font-weight: 600; cursor: pointer; text-transform: capitalize;
+  }
+  .check-chip input { accent-color: var(--green); margin: 0; }
+  .check-chip:has(input:not(:checked)) { opacity: .45; }
+  #manual-item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
+
   .more-ideas { margin-top: 6px; }
   .more-ideas li { margin-bottom: 5px; font-size: .92rem; }
   .more-ideas .cost { color: var(--muted); font-size: .84rem; }
@@ -212,6 +223,21 @@
         <div class="ocr-note" id="ocr-note"></div>
         <div class="file-status" id="status-receipts"></div>
         <textarea id="paste-receipts" placeholder="…or paste receipt text here, e.g.&#10;KROGER 06/24/2026&#10;CHKN BREAST 1.5LB   7.49&#10;SHRD CHEDDAR        2.99"></textarea>
+      </div>
+      <div class="dropzone" id="zone-photo" style="grid-column:1 / -1">
+        <label class="zone-title">📷 Fridge / pantry photo (optional)</label>
+        <div class="hint">Snap your fridge or pantry shelves. Foods are detected <b>on-device</b> — object recognition spots produce, label-reading catches packaged goods — then you confirm what's really there. Nothing is uploaded anywhere.</div>
+        <input type="file" id="file-photo" accept="image/*" multiple>
+        <div class="ocr-note" id="photo-note"></div>
+        <div id="photo-detected" style="display:none">
+          <div class="pantry-chips" id="photo-checks" style="margin:6px 0 4px"></div>
+          <div class="btn-row" style="margin-top:8px">
+            <input id="manual-item" placeholder="Add an item we missed (e.g. tofu)" maxlength="30">
+            <button class="ghost" id="btn-add-manual">+ Add</button>
+            <button class="primary" id="btn-confirm-photo" style="padding:9px 18px; font-size:.9rem">✓ Add checked items to my pantry</button>
+          </div>
+        </div>
+        <div class="file-status" id="photo-pantry-status"></div>
       </div>
     </div>
     <div class="btn-row">
@@ -255,7 +281,7 @@
       <p class="sub">Cuisines ranked by how often (and how recently) you chose them.</p>
       <div class="cuisine-bars" id="cuisine-bars"></div>
       <div id="pantry-section">
-        <p class="sub" style="margin-top:16px">Ingredients spotted on your receipts (your working pantry):</p>
+        <p class="sub" style="margin-top:16px">Your working pantry — from receipts, plus 📷 items confirmed from fridge/pantry photos:</p>
         <div class="pantry-chips" id="pantry-chips"></div>
       </div>
     </section>
@@ -345,6 +371,8 @@ const INGREDIENT_DICT = [
   { key:"oats",         pats:["oats","oatmeal"], cuisines:["breakfast"] },
   { key:"banana",       pats:["banana"], cuisines:["breakfast"] },
   { key:"apple",        pats:["apple","gala","fuji","honeycrisp"], cuisines:[] },
+  { key:"orange",       pats:["orange","clementine","mandarin"], cuisines:["breakfast"] },
+  { key:"carrot",       pats:["carrot"], cuisines:["asian"] },
   { key:"frozen pizza", pats:["frozen pizza","frz pizza","digiorno","red baron","tombstone"], cuisines:["italian"] },
   { key:"ramen noodles",pats:["ramen","instant noodle"], cuisines:["japanese"] },
   { key:"curry paste",  pats:["curry paste","curry pwd","curry powder","garam"], cuisines:["thai","indian"] },
@@ -380,11 +408,11 @@ const MEALS = [
     ingredients:["pasta","pesto","parmesan","tomato","spinach"],
     steps:["Cook pasta; reserve a splash of pasta water.","Toss hot pasta with pesto, halved tomatoes, and spinach (it wilts).","Loosen with pasta water, top with parmesan."] },
   { name:"Chicken Stir-Fry", cuisine:"asian", effort:2, time:"25 min", cost:9,
-    ingredients:["chicken","broccoli","bell pepper","soy sauce","garlic","rice"],
-    steps:["Start rice. Slice chicken thin, stir-fry on high 4–5 min.","Add broccoli + bell pepper, 3 more min.","Sauce: soy sauce, garlic, splash of water + cornstarch. Toss and serve over rice."] },
+    ingredients:["chicken","broccoli","bell pepper","carrot","soy sauce","garlic","rice"],
+    steps:["Start rice. Slice chicken thin, stir-fry on high 4–5 min.","Add broccoli, bell pepper, and carrot coins, 3 more min.","Sauce: soy sauce, garlic, splash of water + cornstarch. Toss and serve over rice."] },
   { name:"Leftover Fried Rice", cuisine:"asian", effort:1, time:"15 min", cost:5,
-    ingredients:["rice","eggs","soy sauce","onion","garlic"],
-    steps:["Scramble eggs in a hot oiled pan, set aside.","Fry onion + garlic, add day-old rice, press flat and let it crisp.","Stir in soy sauce and eggs. Any leftover protein or veg goes in too."] },
+    ingredients:["rice","eggs","soy sauce","onion","garlic","carrot"],
+    steps:["Scramble eggs in a hot oiled pan, set aside.","Fry onion, garlic, and diced carrot; add day-old rice, press flat and let it crisp.","Stir in soy sauce and eggs. Any leftover protein or veg goes in too."] },
   { name:"Teriyaki Salmon Bowl", cuisine:"japanese", effort:2, time:"25 min", cost:12,
     ingredients:["salmon","rice","soy sauce","broccoli"],
     steps:["Start rice. Simmer soy sauce + sugar + splash of water into a quick teriyaki glaze.","Pan-sear salmon 3–4 min per side, brushing with glaze.","Serve over rice with steamed broccoli."] },
@@ -504,6 +532,42 @@ function assignmentFor(name) {
   return household.members.some(m => m.id === a) ? a : "shared"; // removed member -> shared
 }
 const eaterNames = () => household.members.filter(m => selectedEaters.has(m.id)).map(m => m.name);
+
+/* ================= Fridge/pantry photo ================= */
+/* Confirmed photo items persist (with the photo date) and merge into the working
+   pantry as shared items alongside receipt-derived ingredients. */
+
+const PHOTO_KEY = "nextmeal.photopantry.v1";
+function loadPhotoPantry() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PHOTO_KEY));
+    if (p && Array.isArray(p.items)) return p;
+  } catch {}
+  return null;
+}
+function savePhotoPantry(p) { localStorage.setItem(PHOTO_KEY, JSON.stringify(p)); }
+
+/* COCO-SSD object classes -> pantry ingredient keys (food-relevant subset) */
+const COCO_FOOD_MAP = {
+  banana: "banana", apple: "apple", orange: "orange", broccoli: "broccoli",
+  carrot: "carrot", "hot dog": "sausage", pizza: "frozen pizza", sandwich: "bread"
+};
+
+/* Find ingredient keys mentioned in free-form OCR text (packaging labels).
+   Short patterns need word boundaries so "veggie" doesn't match "egg". */
+function ingredientsInText(text) {
+  const lower = text.toLowerCase();
+  const found = new Set();
+  for (const ing of INGREDIENT_DICT) {
+    for (const p of ing.pats) {
+      const hit = (p.length <= 4 && !p.includes(" "))
+        ? new RegExp("\\b" + p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(lower)
+        : lower.includes(p);
+      if (hit) { found.add(ing.key); break; }
+    }
+  }
+  return found;
+}
 
 /* ================= Parsing helpers ================= */
 
@@ -672,6 +736,13 @@ function analyze(txnsAll, receiptItems) {
   availableItems.forEach(it => {
     if (it.ingredient) it.ingredient.cuisines.forEach(c => bump(c, 0.8));
   });
+  // fridge/pantry photo items (shared across the household)
+  const photoPantryData = loadPhotoPantry();
+  const photoKeys = new Set(photoPantryData ? photoPantryData.items : []);
+  photoKeys.forEach(k => {
+    const ing = INGREDIENT_DICT.find(i => i.key === k);
+    if (ing) ing.cuisines.forEach(c => bump(c, 0.5));
+  });
   // "asian" umbrella: chinese/japanese/thai/vietnamese feed it lightly
   ["chinese","japanese","thai","vietnamese"].forEach(c => {
     if (cuisineScores[c]) bump("asian", cuisineScores[c] * 0.5);
@@ -682,6 +753,7 @@ function analyze(txnsAll, receiptItems) {
   availableItems.forEach(it => {
     if (it.ingredient) pantry.set(it.ingredient.key, (pantry.get(it.ingredient.key) || 0) + 1);
   });
+  photoKeys.forEach(k => pantry.set(k, (pantry.get(k) || 0) + 1));
 
   // Frequent merchants
   const merchCount = {};
@@ -699,7 +771,7 @@ function analyze(txnsAll, receiptItems) {
     totals: { grocery: sum(byCat.grocery), restaurant: sum(byCat.restaurant), delivery: sum(byCat.delivery) },
     avgTickets: { restaurant: avg(byCat.restaurant), delivery: avg(byCat.delivery) },
     cuisineScores, pantry, topMerchants,
-    allReceiptItems: receiptItems
+    allReceiptItems: receiptItems, photoKeys
   };
 }
 
@@ -762,10 +834,11 @@ function render(a) {
          <div class="pct">${Math.round(100 * s / maxScore)}%</div></div>`).join("")
     : `<p class="sub">No cuisine signals found — add more transactions or receipts.</p>`;
 
-  // Pantry chips
+  // Pantry chips (📷 = confirmed from a fridge/pantry photo)
   const pantryKeys = [...a.pantry.keys()];
   $("pantry-section").style.display = pantryKeys.length ? "block" : "none";
-  $("pantry-chips").innerHTML = pantryKeys.map(k => `<span class="chip">${esc(k)}</span>`).join("");
+  $("pantry-chips").innerHTML = pantryKeys.map(k =>
+    `<span class="chip ${a.photoKeys.has(k) ? "photo" : ""}">${a.photoKeys.has(k) ? "📷 " : ""}${esc(k)}</span>`).join("");
 
   // ------- Who's-eating context -------
   renderAssignCard(a);
@@ -1032,6 +1105,102 @@ async function ocrImages(files, onStatus) {
   return texts;
 }
 
+/* ================= Food detection in fridge/pantry photos ================= */
+
+let detectorPromise = null;
+async function getDetector() {
+  if (!detectorPromise) {
+    detectorPromise = (async () => {
+      let local = false;
+      try { local = (await fetch("vendor/coco-ssd/model.json", { method: "HEAD" })).ok; } catch {}
+      if (!window.tf) await loadScript(local ? abs("vendor/tf.min.js")
+        : "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4/dist/tf.min.js");
+      if (!window.cocoSsd) await loadScript(local ? abs("vendor/coco-ssd.min.js")
+        : "https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2/dist/coco-ssd.min.js");
+      return cocoSsd.load(local ? { modelUrl: abs("vendor/coco-ssd/model.json") } : { base: "lite_mobilenet_v2" });
+    })().catch(err => { detectorPromise = null; throw err; });
+  }
+  return detectorPromise;
+}
+
+function fileToImage(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+let photoCandidates = new Map(); // ingredient key -> { key, via: "spotted"|"label"|"manual" }
+
+async function processPhotoFiles(files) {
+  const note = $("photo-note");
+  photoCandidates = new Map();
+
+  let detector = null;
+  try {
+    note.textContent = "Loading on-device food detector…";
+    detector = await getDetector();
+  } catch (err) {
+    console.error(err);
+    note.textContent = "⚠ Object detector unavailable — reading labels only.";
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    const which = files.length > 1 ? ` ${i + 1} of ${files.length}` : "";
+    if (detector) {
+      note.textContent = `Looking for foods in photo${which}…`;
+      try {
+        const img = await fileToImage(files[i]);
+        const preds = await detector.detect(img, 20);
+        URL.revokeObjectURL(img.src);
+        preds.filter(p => p.score >= 0.45).forEach(p => {
+          const key = COCO_FOOD_MAP[p.class];
+          if (key && !photoCandidates.has(key)) photoCandidates.set(key, { key, via: "spotted" });
+        });
+      } catch (err) { console.error("detect failed:", err); }
+    }
+    try {
+      note.textContent = `Reading labels in photo${which}…`;
+      const worker = await getOcrWorker();
+      const { data } = await worker.recognize(files[i]);
+      ingredientsInText(data.text).forEach(k => {
+        if (!photoCandidates.has(k)) photoCandidates.set(k, { key: k, via: "label" });
+      });
+    } catch (err) { console.error("label OCR failed:", err); }
+  }
+
+  note.textContent = photoCandidates.size
+    ? `Found ${photoCandidates.size} likely ingredient${photoCandidates.size === 1 ? "" : "s"} — uncheck anything that's wrong, then confirm.`
+    : "Couldn't confidently spot ingredients in that photo — add them manually below.";
+  $("photo-detected").style.display = "block";
+  renderPhotoChecks();
+}
+
+function renderPhotoChecks() {
+  $("photo-checks").innerHTML = [...photoCandidates.values()].map(c => `
+    <label class="check-chip" title="${c.via === "spotted" ? "recognized by object detection" : c.via === "label" ? "read from packaging text" : "added by you"}">
+      <input type="checkbox" data-key="${esc(c.key)}" checked>
+      ${c.via === "spotted" ? "👁" : c.via === "label" ? "🏷" : "✍"} ${esc(c.key)}
+    </label>`).join("");
+}
+
+function updatePhotoStatus() {
+  const p = loadPhotoPantry();
+  const el = $("photo-pantry-status");
+  if (!p || !p.items.length) { el.innerHTML = ""; $("zone-photo").classList.remove("has-data"); return; }
+  const when = new Date(p.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  el.innerHTML = `✓ ${p.items.length} pantry item${p.items.length === 1 ? "" : "s"} from your photo (${when}) · <a href="#" id="clear-photo" style="color:#b3402a">clear</a>`;
+  $("zone-photo").classList.add("has-data");
+  el.querySelector("#clear-photo").addEventListener("click", e => {
+    e.preventDefault();
+    localStorage.removeItem(PHOTO_KEY);
+    updatePhotoStatus();
+    runAnalysis();
+  });
+}
+
 /* ================= Wiring ================= */
 
 let uploadedStatement = "";
@@ -1070,6 +1239,36 @@ $("file-receipts").addEventListener("change", async e => {
   box.value = (box.value.trim() ? box.value.trimEnd() + "\n\n" : "") + uploadedReceipts;
   $("status-receipts").textContent = `✓ ${files.length} file(s) loaded`;
   $("zone-receipts").classList.add("has-data");
+});
+
+/* ---- fridge/pantry photo wiring ---- */
+
+$("file-photo").addEventListener("change", e => {
+  if (e.target.files.length) processPhotoFiles([...e.target.files]);
+});
+
+$("btn-add-manual").addEventListener("click", () => {
+  const input = $("manual-item");
+  const raw = input.value.trim().toLowerCase();
+  if (!raw) return;
+  // snap to a known ingredient when possible so meals can match it
+  const known = INGREDIENT_DICT.find(i => i.key === raw || i.pats.some(p => raw.includes(p)));
+  const key = known ? known.key : raw;
+  if (!photoCandidates.has(key)) photoCandidates.set(key, { key, via: "manual" });
+  input.value = "";
+  $("photo-detected").style.display = "block";
+  renderPhotoChecks();
+});
+$("manual-item").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("btn-add-manual").click(); } });
+
+$("btn-confirm-photo").addEventListener("click", () => {
+  const keys = [...document.querySelectorAll("#photo-checks input:checked")].map(i => i.dataset.key);
+  const prev = loadPhotoPantry();
+  savePhotoPantry({ ts: Date.now(), items: [...new Set([...(prev ? prev.items : []), ...keys])] });
+  $("photo-detected").style.display = "none";
+  $("photo-note").textContent = "";
+  updatePhotoStatus();
+  runAnalysis();
 });
 
 $("btn-sample").addEventListener("click", () => {
@@ -1236,6 +1435,7 @@ $("btn-clear-history").addEventListener("click", e => {
 
 renderHousehold();
 renderHistory();
+updatePhotoStatus();
 </script>
 </body>
 </html>

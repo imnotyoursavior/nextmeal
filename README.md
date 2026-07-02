@@ -22,13 +22,21 @@ No build step, no dependencies. Either:
    text is placed in the textarea for review before analysis. Lines like
    `CHKN BREAST 1.8LB   8.12` are parsed into pantry ingredients; totals/tax/tender lines
    are skipped.
-3. **Household (optional)** — solo users can skip this entirely. Add family members to
+3. **Fridge / pantry photo (optional)** — snap your fridge or pantry shelves. Two on-device
+   passes find food: COCO-SSD object detection (TensorFlow.js, vendored in `vendor/` +
+   `vendor/coco-ssd/`) spots produce like bananas, broccoli, and carrots, while the OCR
+   engine reads packaging labels ("WHOLE MILK", "TORTILLAS"). Detected items appear as
+   checkboxes — uncheck misfires, add missed items manually — then confirm to merge them
+   into your working pantry (shown with a 📷 marker, shared across the household, persisted
+   with the photo date, re-scans merge rather than replace, one-click clear).
+   Try it with `test-banana.jpg` (object detection) or `test-fridge-labels.png` (label reading).
+4. **Household (optional)** — solo users can skip this entirely. Add family members to
    unlock per-person profiles: an "who were these groceries for?" panel appears after
    analysis where each receipt item can be assigned to a person (or left Shared), and a
    "who's eating this meal?" selector scopes every suggestion to the people at the table.
-4. Click **Suggest my next meal** — or click **Try with sample data** first to see a demo.
+5. Click **Suggest my next meal** — or click **Try with sample data** first to see a demo.
    (`sample-receipt.png` is a test receipt photo you can upload to try the OCR.)
-5. After you eat, click **"I made this / I ordered this / I ate out — save to history"**
+6. After you eat, click **"I made this / I ordered this / I ate out — save to history"**
    on any suggestion card. The log records who ate.
 
 ## What it does
@@ -83,6 +91,7 @@ With a single member the app behaves exactly like the solo version — all house
 
 ## Files
 
-- `index.html` — the entire app (markup, styles, parsers, preference model, meal database, history engine).
-- `vendor/` — Tesseract.js OCR engine (~40 MB: worker, WASM cores, English language data) for fully offline receipt-photo reading.
+- `index.html` — the entire app (markup, styles, parsers, preference model, meal database, history engine, photo detection).
+- `vendor/` — Tesseract.js OCR engine (~40 MB) plus TensorFlow.js + COCO-SSD model (~19 MB in `vendor/coco-ssd/`) for fully offline receipt reading and fridge-photo food detection.
 - `sample-receipt.png` — generated test receipt image for trying the OCR.
+- `test-banana.jpg` / `test-fridge-labels.png` — test photos for the fridge/pantry feature (banana photo: Evan-Amos, public domain).
