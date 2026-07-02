@@ -22,10 +22,14 @@ No build step, no dependencies. Either:
    text is placed in the textarea for review before analysis. Lines like
    `CHKN BREAST 1.8LB   8.12` are parsed into pantry ingredients; totals/tax/tender lines
    are skipped.
-3. Click **Suggest my next meal** — or click **Try with sample data** first to see a demo.
+3. **Household (optional)** — solo users can skip this entirely. Add family members to
+   unlock per-person profiles: an "who were these groceries for?" panel appears after
+   analysis where each receipt item can be assigned to a person (or left Shared), and a
+   "who's eating this meal?" selector scopes every suggestion to the people at the table.
+4. Click **Suggest my next meal** — or click **Try with sample data** first to see a demo.
    (`sample-receipt.png` is a test receipt photo you can upload to try the OCR.)
-4. After you eat, click **"I made this / I ordered this / I ate out — save to history"**
-   on any suggestion card.
+5. After you eat, click **"I made this / I ordered this / I ate out — save to history"**
+   on any suggestion card. The log records who ate.
 
 ## What it does
 
@@ -59,6 +63,23 @@ feeds back into the suggestion engine:
 
 The history panel shows your recent meals, cuisines explored, and experiments tried, with a
 two-click **Clear history** button. Nothing syncs anywhere — it lives in this browser only.
+
+## Household profiles (family vs. single meals)
+
+Add household members (stored in `nextmeal.household.v1`) to differentiate family meals from
+single meals:
+
+- **Item assignment** — after analysis, assign each receipt item to a person or leave it
+  Shared (`nextmeal.assignments.v1`, remembered by item name so future receipts auto-apply).
+- **Who's eating** — a persistent selector (`nextmeal.eaters.v1`) scopes the pantry, cuisine
+  hints, and meal history to just the selected eaters. Someone else's groceries won't be
+  suggested for your solo dinner.
+- **Sizing** — recipe cost estimates scale to the headcount ("~$13.50 for 3 people" vs.
+  "~$4.50 for 1 person"), and the suggestion header says who the meal is for.
+- **Per-person learning** — meal logs record who ate, so the repeat cooldown and cuisine
+  boosts apply per person: tacos you had solo last night are still fresh for the kids.
+
+With a single member the app behaves exactly like the solo version — all household UI stays hidden.
 
 ## Files
 

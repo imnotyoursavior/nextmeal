@@ -157,6 +157,27 @@
   button.danger:hover { background: #fdeae5; }
   .ocr-note { font-size: .8rem; color: var(--purple); font-weight: 600; min-height: 1.1em; margin-bottom: 6px; }
 
+  /* Household */
+  .member-row, .eater-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .member-chip {
+    background: var(--blue-soft); color: var(--blue); border-radius: 999px;
+    padding: 5px 14px; font-weight: 600; font-size: .9rem;
+    display: inline-flex; gap: 7px; align-items: center;
+  }
+  .member-chip button { background: none; border: none; color: inherit; cursor: pointer; font-weight: 700; font-size: 1rem; padding: 0 2px; }
+  .add-member { margin-top: 12px; }
+  .add-member input { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
+  .eater-chip {
+    border: 1.5px solid var(--border); background: #fff; color: var(--muted);
+    border-radius: 999px; padding: 6px 16px; font-size: .9rem; font-weight: 600; cursor: pointer;
+  }
+  .eater-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .assign-list { max-height: 320px; overflow-y: auto; margin-top: 8px; }
+  .assign-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: .9rem; }
+  .assign-row .ing { color: var(--green); font-size: .8rem; }
+  .assign-row .price { color: var(--muted); font-size: .82rem; }
+  .assign-row select { margin-left: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: .86rem; background: #fff; }
+
   .more-ideas { margin-top: 6px; }
   .more-ideas li { margin-bottom: 5px; font-size: .92rem; }
   .more-ideas .cost { color: var(--muted); font-size: .84rem; }
@@ -200,12 +221,33 @@
     </div>
   </section>
 
+  <!-- STEP 2: Household -->
+  <section class="card" id="household-card">
+    <h2><span class="step">Step 2</span> · Who's in your household?</h2>
+    <p class="sub">Cooking solo? Skip this. Add family members to assign groceries to each person and get meals sized for whoever's eating tonight.</p>
+    <div class="member-row" id="member-list"></div>
+    <div class="btn-row add-member">
+      <input id="new-member-name" placeholder="Add a person (e.g. Sarah)" maxlength="20">
+      <button class="ghost" id="btn-add-member">+ Add person</button>
+    </div>
+    <div id="eaters-section" style="display:none">
+      <p class="sub" style="margin:16px 0 8px"><b>Who's eating this meal?</b> Suggestions use only their groceries, tastes, and meal history.</p>
+      <div class="eater-row" id="eater-list"></div>
+    </div>
+  </section>
+
   <!-- RESULTS -->
   <div id="results">
     <section class="card">
       <h2>📊 Your last 30 days of food spending</h2>
       <p class="sub" id="window-note"></p>
       <div class="stat-grid" id="stat-grid"></div>
+    </section>
+
+    <section class="card" id="assign-card" style="display:none">
+      <h2>🧑‍🍳 Who were these groceries for?</h2>
+      <p class="sub">Assign receipt items to a person, or leave them Shared. Choices are remembered, and suggestions update instantly.</p>
+      <div class="assign-list" id="assign-list"></div>
     </section>
 
     <section class="card">
@@ -220,7 +262,7 @@
 
     <section class="card">
       <h2>🥇 Your next meal — pick a lane</h2>
-      <p class="sub">Four options matched to your tastes, pantry, and budget.</p>
+      <p class="sub" id="lane-sub">Options matched to your tastes, pantry, and budget.</p>
       <div class="lane-grid" id="lane-grid"></div>
     </section>
 
@@ -424,6 +466,45 @@ function historyStats(history) {
   return { byMeal, cuisineCount };
 }
 
+/* ================= Household profiles ================= */
+/* Members live in localStorage; receipt items can be assigned to a member (or Shared),
+   and suggestions are computed only for the currently selected eaters. */
+
+const HH_KEY = "nextmeal.household.v1";
+const ASSIGN_KEY = "nextmeal.assignments.v1";   // normalized item name -> member id | "shared"
+const EATERS_KEY = "nextmeal.eaters.v1";
+
+function loadHousehold() {
+  try {
+    const h = JSON.parse(localStorage.getItem(HH_KEY));
+    if (h && Array.isArray(h.members) && h.members.length) return h;
+  } catch {}
+  return { members: [{ id: "me", name: "Me" }] };
+}
+function saveHousehold() { localStorage.setItem(HH_KEY, JSON.stringify(household)); }
+function loadAssignments() {
+  try { return JSON.parse(localStorage.getItem(ASSIGN_KEY)) || {}; } catch { return {}; }
+}
+function saveAssignments() { localStorage.setItem(ASSIGN_KEY, JSON.stringify(assignments)); }
+
+let household = loadHousehold();
+let assignments = loadAssignments();
+let selectedEaters = new Set((() => {
+  try {
+    const e = JSON.parse(localStorage.getItem(EATERS_KEY));
+    if (Array.isArray(e) && e.length) return e;
+  } catch {}
+  return household.members.map(m => m.id);
+})());
+
+const normItem = s => s.toLowerCase().replace(/\s+/g, " ").trim();
+function assignmentFor(name) {
+  const a = assignments[normItem(name)];
+  if (!a || a === "shared") return "shared";
+  return household.members.some(m => m.id === a) ? a : "shared"; // removed member -> shared
+}
+const eaterNames = () => household.members.filter(m => selectedEaters.has(m.id)).map(m => m.name);
+
 /* ================= Parsing helpers ================= */
 
 function parseCSV(text) {
@@ -554,6 +635,12 @@ function parseReceipts(text) {
 /* ================= Analysis ================= */
 
 function analyze(txnsAll, receiptItems) {
+  // only groceries available to whoever's eating: shared items + selected members' items
+  const availableItems = receiptItems.filter(it => {
+    const a = assignmentFor(it.name);
+    return a === "shared" || selectedEaters.has(a);
+  });
+
   // 30-day window anchored at the most recent transaction (or today)
   const anchor = txnsAll.length
     ? new Date(Math.max(...txnsAll.map(t => t.date.getTime())))
@@ -582,7 +669,7 @@ function analyze(txnsAll, receiptItems) {
     const base = t.category === "restaurant" ? 3 : t.category === "delivery" ? 2.5 : 0.6;
     cs.forEach(c => bump(c, base * recencyW(t.date)));
   });
-  receiptItems.forEach(it => {
+  availableItems.forEach(it => {
     if (it.ingredient) it.ingredient.cuisines.forEach(c => bump(c, 0.8));
   });
   // "asian" umbrella: chinese/japanese/thai/vietnamese feed it lightly
@@ -592,7 +679,7 @@ function analyze(txnsAll, receiptItems) {
 
   // Pantry
   const pantry = new Map(); // key -> count
-  receiptItems.forEach(it => {
+  availableItems.forEach(it => {
     if (it.ingredient) pantry.set(it.ingredient.key, (pantry.get(it.ingredient.key) || 0) + 1);
   });
 
@@ -611,7 +698,8 @@ function analyze(txnsAll, receiptItems) {
     anchor, windowStart, txns, byCat,
     totals: { grocery: sum(byCat.grocery), restaurant: sum(byCat.restaurant), delivery: sum(byCat.delivery) },
     avgTickets: { restaurant: avg(byCat.restaurant), delivery: avg(byCat.delivery) },
-    cuisineScores, pantry, topMerchants
+    cuisineScores, pantry, topMerchants,
+    allReceiptItems: receiptItems
   };
 }
 
@@ -642,7 +730,7 @@ function scoreMeal(meal, a, hs) {
 const $ = id => document.getElementById(id);
 const fmt$ = n => "$" + n.toFixed(2);
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 function render(a) {
   $("results").style.display = "block";
@@ -679,8 +767,19 @@ function render(a) {
   $("pantry-section").style.display = pantryKeys.length ? "block" : "none";
   $("pantry-chips").innerHTML = pantryKeys.map(k => `<span class="chip">${esc(k)}</span>`).join("");
 
+  // ------- Who's-eating context -------
+  renderAssignCard(a);
+  const names = eaterNames();
+  const nEaters = Math.max(1, names.length);
+  $("lane-sub").textContent = household.members.length > 1
+    ? (nEaters === 1 ? `Solo meal for ${names[0]} — their groceries, tastes, and history only.`
+       : `${nEaters === household.members.length ? "Family meal" : "Meal"} for ${names.join(" + ")} — sized and matched to them.`)
+    : "Options matched to your tastes, pantry, and budget.";
+
   // ------- Lane picks -------
-  const hs = historyStats(loadHistory());
+  // history counts only for whoever's eating (legacy entries without eaters count for everyone)
+  const relevantHist = loadHistory().filter(e => !e.eaters || e.eaters.some(id => selectedEaters.has(id)));
+  const hs = historyStats(relevantHist);
   const ranked = MEALS.map(m => ({ meal: m, ...scoreMeal(m, a, hs) })).sort((x, y) => y.score - x.score);
   const used = new Set();
   const pick = pred => {
@@ -706,7 +805,7 @@ function render(a) {
     <div class="meal-card">
       <span class="lane-tag ${laneClass}">${laneLabel}</span>
       <h3>${esc(r.meal.name)}</h3>
-      <div class="meal-meta">${cap(r.meal.cuisine)} · ${r.meal.time} · ~${fmt$(r.meal.cost)}/serving-set</div>
+      <div class="meal-meta">${cap(r.meal.cuisine)} · ${r.meal.time} · ~${fmt$(r.meal.cost * Math.max(0.5, nEaters / 2))} for ${nEaters} ${nEaters === 1 ? "person" : "people"}</div>
       ${r.have.length ? `<div class="match-note">✓ You already have ${r.have.length} of ${r.meal.ingredients.length} ingredients</div>` : ""}
       <div class="meal-why">${customWhy || whyFor(r)}</div>
       <details><summary>Show recipe (${r.meal.steps.length} steps)</summary>
@@ -786,6 +885,25 @@ function render(a) {
 function countCuisine(a, cuisine) {
   return a.txns.filter(t => (t.category === "restaurant" || t.category === "delivery") &&
     cuisinesOf(t.desc).includes(cuisine)).length || 1;
+}
+
+function renderAssignCard(a) {
+  const multi = household.members.length > 1;
+  const rows = new Map(); // dedupe by normalized name
+  (a.allReceiptItems || []).forEach(it => {
+    if (it.ingredient && !rows.has(normItem(it.name))) rows.set(normItem(it.name), it);
+  });
+  $("assign-card").style.display = multi && rows.size ? "block" : "none";
+  if (!multi || !rows.size) return;
+  $("assign-list").innerHTML = [...rows.values()].map(it => `
+    <div class="assign-row">
+      <span>${esc(it.name)}</span><span class="ing">→ ${esc(it.ingredient.key)}</span>
+      <span class="price">${fmt$(it.price)}</span>
+      <select data-item="${esc(normItem(it.name))}">
+        <option value="shared">Shared</option>
+        ${household.members.map(m => `<option value="${m.id}" ${assignmentFor(it.name) === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+      </select>
+    </div>`).join("");
 }
 
 /* ================= Sample data (dates relative to today) ================= */
@@ -963,6 +1081,18 @@ $("btn-sample").addEventListener("click", () => {
   $("error-msg").textContent = "";
 });
 
+let lastTxns = null, lastReceiptItems = null;
+
+function runAnalysis() {
+  if (!lastTxns) return;
+  const a = analyze(lastTxns, lastReceiptItems);
+  if (a.txns.length === 0) {
+    $("error-msg").textContent = "No food-related transactions found in the last 30 days of that statement.";
+    return;
+  }
+  render(a);
+}
+
 $("btn-analyze").addEventListener("click", () => {
   const stmtText = ($("paste-statement").value.trim()) || uploadedStatement;
   const rcptText = ($("paste-receipts").value.trim()) || uploadedReceipts;
@@ -977,13 +1107,75 @@ $("btn-analyze").addEventListener("click", () => {
     $("error-msg").textContent = "Couldn't find date / description / amount columns in that statement.";
     return;
   }
-  const receiptItems = rcptText ? parseReceipts(rcptText) : [];
-  const a = analyze(txns, receiptItems);
-  if (a.txns.length === 0) {
-    $("error-msg").textContent = "No food-related transactions found in the last 30 days of that statement.";
-    return;
+  lastTxns = txns;
+  lastReceiptItems = rcptText ? parseReceipts(rcptText) : [];
+  runAnalysis();
+});
+
+/* ---- household UI ---- */
+
+function renderHousehold() {
+  // drop selections for removed members; never allow an empty selection
+  selectedEaters = new Set([...selectedEaters].filter(id => household.members.some(m => m.id === id)));
+  if (!selectedEaters.size) household.members.forEach(m => selectedEaters.add(m.id));
+  localStorage.setItem(EATERS_KEY, JSON.stringify([...selectedEaters]));
+
+  $("member-list").innerHTML = household.members.map(m =>
+    `<span class="member-chip">${esc(m.name)}${household.members.length > 1
+      ? `<button data-rm="${m.id}" title="Remove ${esc(m.name)}">×</button>` : ""}</span>`).join("");
+
+  const multi = household.members.length > 1;
+  $("eaters-section").style.display = multi ? "block" : "none";
+  if (multi) {
+    $("eater-list").innerHTML = household.members.map(m =>
+      `<button class="eater-chip ${selectedEaters.has(m.id) ? "on" : ""}" data-eater="${m.id}">${esc(m.name)}</button>`).join("")
+      + `<button class="eater-chip" data-eater="__all">Everyone</button>`;
   }
-  render(a);
+}
+
+$("btn-add-member").addEventListener("click", () => {
+  const input = $("new-member-name");
+  const name = input.value.trim();
+  if (!name) return;
+  const member = { id: "m" + Date.now(), name };
+  household.members.push(member);
+  selectedEaters.add(member.id);   // new people join the table by default
+  saveHousehold();
+  input.value = "";
+  renderHousehold();
+  runAnalysis();
+});
+$("new-member-name").addEventListener("keydown", e => { if (e.key === "Enter") $("btn-add-member").click(); });
+
+$("member-list").addEventListener("click", e => {
+  const b = e.target.closest("button[data-rm]");
+  if (!b) return;
+  household.members = household.members.filter(m => m.id !== b.dataset.rm);
+  saveHousehold();
+  renderHousehold();
+  runAnalysis();
+});
+
+$("eater-list").addEventListener("click", e => {
+  const b = e.target.closest("button[data-eater]");
+  if (!b) return;
+  if (b.dataset.eater === "__all") {
+    household.members.forEach(m => selectedEaters.add(m.id));
+  } else if (selectedEaters.has(b.dataset.eater)) {
+    if (selectedEaters.size > 1) selectedEaters.delete(b.dataset.eater); // keep at least one eater
+  } else {
+    selectedEaters.add(b.dataset.eater);
+  }
+  renderHousehold();
+  runAnalysis();
+});
+
+$("assign-list").addEventListener("change", e => {
+  const s = e.target.closest("select[data-item]");
+  if (!s) return;
+  assignments[s.dataset.item] = s.value;
+  saveAssignments();
+  runAnalysis();
 });
 
 /* ---- meal history UI ---- */
@@ -995,25 +1187,35 @@ function renderHistory() {
   $("history-card").style.display = h.length ? "block" : "none";
   if (!h.length) return;
 
+  const multi = household.members.length > 1;
   $("hist-list").innerHTML = [...h].reverse().slice(0, 10).map(e => `
     <li><span>${LANE_ICONS[e.lane] || "🍴"}</span>
       <b>${esc(e.name)}</b>
       <span style="color:var(--muted); text-transform:capitalize">${esc(e.cuisine || "")}</span>
+      ${multi && e.eaterNames && e.eaterNames.length ? `<span style="color:var(--blue); font-size:.82rem">for ${esc(e.eaterNames.join(", "))}</span>` : ""}
       <span class="when">${new Date(e.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
     </li>`).join("");
 
   const cuisines = new Set(h.map(e => e.cuisine).filter(Boolean));
   const experiments = h.filter(e => e.lane === "experiment").length;
+  const perMember = multi ? household.members.map(m => {
+    const n = h.filter(e => e.eaters && e.eaters.includes(m.id)).length;
+    return `<span><b>${n}</b> for ${esc(m.name)}</span>`;
+  }).join("") : "";
   $("hist-stats").innerHTML =
     `<span><b>${h.length}</b> meal${h.length === 1 ? "" : "s"} logged</span>` +
     `<span><b>${cuisines.size}</b> cuisine${cuisines.size === 1 ? "" : "s"} explored</span>` +
-    `<span><b>${experiments}</b> 🧪 experiment${experiments === 1 ? "" : "s"} tried</span>`;
+    `<span><b>${experiments}</b> 🧪 experiment${experiments === 1 ? "" : "s"} tried</span>` +
+    perMember;
 }
 
 $("lane-grid").addEventListener("click", e => {
   const b = e.target.closest("button.log-btn");
   if (!b || b.disabled) return;
-  logMeal({ name: b.dataset.name, cuisine: b.dataset.cuisine, lane: b.dataset.lane });
+  logMeal({
+    name: b.dataset.name, cuisine: b.dataset.cuisine, lane: b.dataset.lane,
+    eaters: [...selectedEaters], eaterNames: eaterNames()
+  });
   b.disabled = true;
   b.textContent = "Saved to history ✓ (shapes your next suggestions)";
 });
@@ -1032,6 +1234,7 @@ $("btn-clear-history").addEventListener("click", e => {
   }
 });
 
+renderHousehold();
 renderHistory();
 </script>
 </body>
