@@ -71,6 +71,13 @@
     background: #fff;
   }
   .dropzone input[type=file] { font-size: .85rem; margin-bottom: 8px; max-width: 100%; }
+  .file-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  button.camera-btn {
+    background: transparent; color: var(--purple); border: 1.5px solid var(--purple);
+    padding: 7px 14px; border-radius: 9px; font-size: .86rem; font-weight: 600;
+    cursor: pointer; margin-bottom: 8px; white-space: nowrap;
+  }
+  button.camera-btn:hover { background: var(--purple-soft); }
   .file-status { font-size: .82rem; color: var(--green); font-weight: 600; min-height: 1.2em; }
 
   .btn-row { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
@@ -243,7 +250,11 @@
       <div class="dropzone" id="zone-statement">
         <label class="zone-title">🏦 Bank statement (CSV, PDF, or photo)</label>
         <div class="hint">CSV export, PDF statement, or a screenshot of your transactions — PDFs and images are read on-device, nothing is uploaded. Extracted text appears below so you can fix any misreads.</div>
-        <input type="file" id="file-statement" accept=".csv,.txt,.tsv,.pdf,application/pdf,image/*,text/csv,text/plain,text/comma-separated-values,application/csv,application/vnd.ms-excel,application/octet-stream" multiple>
+        <div class="file-row">
+          <input type="file" id="file-statement" accept=".csv,.txt,.tsv,.pdf,application/pdf,image/*,text/csv,text/plain,text/comma-separated-values,application/csv,application/vnd.ms-excel,application/octet-stream" multiple>
+          <button class="camera-btn" id="btn-cam-statement">📸 Take photo</button>
+          <input type="file" id="cam-statement" accept="image/*" capture="environment" style="display:none">
+        </div>
         <div class="ocr-note" id="statement-note"></div>
         <div class="file-status" id="status-statement"></div>
         <textarea id="paste-statement" placeholder="…or paste CSV here, e.g.&#10;Date,Description,Amount&#10;06/24/2026,KROGER #442,-54.23"></textarea>
@@ -251,7 +262,11 @@
       <div class="dropzone" id="zone-receipts">
         <label class="zone-title">🧾 Grocery receipts (text or photos)</label>
         <div class="hint">Paste receipt text, upload .txt files, or upload <b>photos of receipts</b> (JPG/PNG) — they're read on-device with OCR, nothing is uploaded.</div>
-        <input type="file" id="file-receipts" accept=".txt,.csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,image/*,application/pdf,text/plain,text/csv,application/csv,application/vnd.ms-excel,application/octet-stream" multiple>
+        <div class="file-row">
+          <input type="file" id="file-receipts" accept=".txt,.csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,image/*,application/pdf,text/plain,text/csv,application/csv,application/vnd.ms-excel,application/octet-stream" multiple>
+          <button class="camera-btn" id="btn-cam-receipts">📸 Take photo</button>
+          <input type="file" id="cam-receipts" accept="image/*" capture="environment" style="display:none">
+        </div>
         <div class="ocr-note" id="ocr-note"></div>
         <div class="file-status" id="status-receipts"></div>
         <textarea id="paste-receipts" placeholder="…or paste receipt text here, e.g.&#10;KROGER 06/24/2026&#10;CHKN BREAST 1.5LB   7.49&#10;SHRD CHEDDAR        2.99"></textarea>
@@ -259,7 +274,11 @@
       <div class="dropzone" id="zone-photo" style="grid-column:1 / -1">
         <label class="zone-title">📷 Fridge / pantry photo (optional)</label>
         <div class="hint">Snap your fridge or pantry shelves. Foods are detected <b>on-device</b> — object recognition spots produce, label-reading catches packaged goods — then you confirm what's really there. Nothing is uploaded anywhere.</div>
-        <input type="file" id="file-photo" accept="image/*" multiple>
+        <div class="file-row">
+          <input type="file" id="file-photo" accept="image/*" multiple>
+          <button class="camera-btn" id="btn-cam-photo">📸 Take photo</button>
+          <input type="file" id="cam-photo" accept="image/*" capture="environment" style="display:none">
+        </div>
         <div class="ocr-note" id="photo-note"></div>
         <div id="photo-detected" style="display:none">
           <div class="pantry-chips" id="photo-checks" style="margin:6px 0 4px"></div>
@@ -1897,6 +1916,24 @@ $("file-receipts").addEventListener("change", async e => {
   $("status-receipts").textContent = `✓ ${files.length} file(s) loaded`;
   $("zone-receipts").classList.add("has-data");
 });
+
+/* ---- camera buttons: shots flow through the same handlers as uploads ---- */
+
+function wireCamera(btnId, camId, targetId) {
+  $(btnId).addEventListener("click", () => $(camId).click());
+  $(camId).addEventListener("change", e => {
+    if (!e.target.files.length) return;
+    const dt = new DataTransfer();
+    [...e.target.files].forEach(f => dt.items.add(f));
+    const target = $(targetId);
+    target.files = dt.files;
+    target.dispatchEvent(new Event("change"));
+    e.target.value = "";   // allow taking another photo right away
+  });
+}
+wireCamera("btn-cam-statement", "cam-statement", "file-statement");
+wireCamera("btn-cam-receipts", "cam-receipts", "file-receipts");
+wireCamera("btn-cam-photo", "cam-photo", "file-photo");
 
 /* ---- fridge/pantry photo wiring ---- */
 
