@@ -57,7 +57,7 @@ No build step, no dependencies. Either:
 - Builds a **taste profile**: cuisine affinity scored by visit frequency, spend channel
   (restaurant > delivery > grocery hints), and recency (last 10 days weighted up).
 - Builds a **working pantry** from receipt items (40+ ingredient patterns).
-- Ranks a built-in database of ~20 meals by cuisine affinity + ingredient overlap and
+- Ranks a built-in database of 60+ meals by cuisine affinity + ingredient overlap and
   presents four lanes:
   - 🍳 **Cook it** — best full recipe match, with inline steps and "you already have X of Y ingredients"
   - ⏱️ **Keep it simple** — best low-effort match (10–15 min meals)
@@ -99,9 +99,28 @@ single meals:
 
 With a single member the app behaves exactly like the solo version — all household UI stays hidden.
 
+## Backup, durability & offline (PWA)
+
+Everything NextMeal knows lives in browser storage, which browsers can evict (Safari purges
+site data after ~7 days of disuse). Three defenses:
+
+- **Export / Import** — the 💾 Backup card bundles all `nextmeal.*` localStorage keys plus
+  the learned visual examples (IndexedDB) into a single JSON file, and restores from one.
+  This is also how you move your data between devices. The file never leaves your hands.
+- **Persistent storage** — the app requests `navigator.storage.persist()` and reports
+  whether the browser granted it.
+- **Service worker PWA** — `sw.js` precaches the app shell and runtime-caches everything
+  else (including the ~60 MB of vendored ML models) on first use, so the app loads and works
+  fully offline afterward. `manifest.webmanifest` + icons make it installable ("Add to Home
+  Screen" on mobile — handy for the fridge-camera workflow).
+
+Staleness nudges appear when the newest statement transaction is over a week old or a fridge
+photo scan is aging out.
+
 ## Files
 
-- `index.html` — the entire app (markup, styles, parsers, preference model, meal database, history engine, photo detection).
+- `index.html` — the entire app (markup, styles, parsers, preference model, 60+ meal database, history engine, photo detection, backup).
+- `sw.js` / `manifest.webmanifest` / `icon-*.png` — service worker, PWA manifest, and icons for offline use and home-screen install.
 - `vendor/` — Tesseract.js OCR engine (~40 MB), TensorFlow.js + COCO-SSD model (~19 MB in `vendor/coco-ssd/`), and MobileNet v2 feature extractor (~2.7 MB in `vendor/mobilenet/`) for fully offline receipt reading, fridge-photo food detection, and personal food-appearance learning.
 - `sample-receipt.png` — generated test receipt image for trying the OCR.
 - `test-banana.jpg` / `test-fridge-labels.png` — test photos for the fridge/pantry feature (banana photo: Evan-Amos, public domain).

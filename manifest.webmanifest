@@ -1,0 +1,14 @@
+{
+  "name": "NextMeal",
+  "short_name": "NextMeal",
+  "description": "Local-first meal suggester: analyzes your food spending, receipts, and fridge photos to suggest your next meal. All data stays on your device.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#e2711d",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

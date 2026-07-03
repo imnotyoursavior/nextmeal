@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#e2711d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>NextMeal — What should you eat next?</title>
 <style>
   :root {
@@ -335,6 +339,19 @@
     <button class="danger" id="btn-clear-history">Clear history</button>
   </section>
 
+  <!-- BACKUP & RESTORE -->
+  <section class="card" id="backup-card">
+    <h2>💾 Backup &amp; restore</h2>
+    <p class="sub">Everything NextMeal knows — history, household, learned foods — lives only in this browser. Export a backup file to protect it or move it to another device. The file stays with you; nothing is uploaded.</p>
+    <div class="btn-row">
+      <button class="ghost" id="btn-export">⬇ Export my data</button>
+      <input type="file" id="file-import" accept=".json,application/json" style="display:none">
+      <button class="ghost" id="btn-import">⬆ Import a backup</button>
+      <span class="ocr-note" id="backup-note"></span>
+    </div>
+    <p class="sub" id="storage-note" style="margin-top:12px"></p>
+  </section>
+
   <footer>
     <span class="privacy">🔒 100% local — your financial data, receipt photos, and meal history never leave this device.</span>
   </footer>
@@ -411,7 +428,20 @@ const INGREDIENT_DICT = [
   { key:"cucumber",     pats:["cucumber","cuke"], cuisines:["mediterranean"] },
   { key:"hummus",       pats:["hummus"], cuisines:["mediterranean"] },
   { key:"canned tomatoes", pats:["diced tom","crushed tom","canned tom"], cuisines:["italian"] },
-  { key:"chili beans",  pats:["chili bean","kidney bean"], cuisines:["american"] }
+  { key:"chili beans",  pats:["chili bean","kidney bean"], cuisines:["american"] },
+  { key:"corn",         pats:["corn"], cuisines:["mexican","american"] },
+  { key:"mushrooms",    pats:["mushroom","cremini","baby bella","portobello"], cuisines:["italian"] },
+  { key:"cream",        pats:["heavy cream","whipping cream","half & half","half and half"], cuisines:["italian"] },
+  { key:"chickpeas",    pats:["chickpea","garbanzo"], cuisines:["mediterranean","indian"] },
+  { key:"tuna",         pats:["tuna"], cuisines:["american"] },
+  { key:"turkey",       pats:["turkey"], cuisines:["american"] },
+  { key:"ham",          pats:["ham"], cuisines:["american"] },
+  { key:"sweet potato", pats:["sweet potato","yam"], cuisines:["american"] },
+  { key:"zucchini",     pats:["zucchini","courgette"], cuisines:["mediterranean","italian"] },
+  { key:"tofu",         pats:["tofu"], cuisines:["asian","thai"] },
+  { key:"peanut butter",pats:["peanut butter"], cuisines:["thai","breakfast"] },
+  { key:"lemon",        pats:["lemon"], cuisines:["mediterranean"] },
+  { key:"honey",        pats:["honey"], cuisines:["breakfast"] }
 ];
 
 /* ================= Meal database ================= */
@@ -479,7 +509,138 @@ const MEALS = [
     steps:["Brown beef with onion; add chili powder + cumin.","Add beans + canned tomatoes, simmer 25 min.","Bowl with cheese and chips for scooping."] },
   { name:"Upgraded Ramen", cuisine:"japanese", effort:1, time:"12 min", cost:4,
     ingredients:["ramen noodles","eggs","spinach","soy sauce"],
-    steps:["Cook ramen; soft-boil an egg (6.5 min) alongside.","Stir spinach into the hot broth to wilt.","Top with the jammy egg and a dash of soy."] }
+    steps:["Cook ramen; soft-boil an egg (6.5 min) alongside.","Stir spinach into the hot broth to wilt.","Top with the jammy egg and a dash of soy."] },
+
+  /* --- expansion set --- */
+  { name:"Sheet-Pan Chicken Fajitas", cuisine:"mexican", effort:1, time:"30 min (10 hands-on)", cost:9,
+    ingredients:["chicken","bell pepper","onion","tortillas","lime"],
+    steps:["Slice chicken, peppers, onion; toss with oil + chili powder + cumin on a sheet pan.","Roast at 425°F for 20 min.","Squeeze lime over everything, pile into warm tortillas."] },
+  { name:"Huevos Rancheros", cuisine:"mexican", effort:1, time:"15 min", cost:5,
+    ingredients:["eggs","tortillas","salsa","black beans","cheese"],
+    steps:["Crisp tortillas in a dry pan; warm the beans.","Fry eggs sunny-side up.","Stack: tortilla, beans, egg, salsa, cheese."] },
+  { name:"Beef Nacho Night", cuisine:"mexican", effort:1, time:"15 min", cost:7,
+    ingredients:["ground beef","tortilla chips","cheese","salsa","avocado"],
+    steps:["Brown beef with taco seasoning.","Layer chips + beef + cheese on a sheet pan, broil 2–3 min.","Top with salsa and avocado. Eat off the pan."] },
+  { name:"Chicken Enchiladas", cuisine:"mexican", effort:2, time:"45 min", cost:11,
+    ingredients:["chicken","tortillas","cheese","salsa","onion"],
+    steps:["Shred cooked chicken; mix with sautéed onion and half the cheese.","Roll into tortillas, seam-down in a baking dish, cover with salsa + remaining cheese.","Bake at 375°F for 20 min until bubbly."] },
+  { name:"Elote-Style Corn Bowls", cuisine:"mexican", effort:2, time:"25 min", cost:8,
+    ingredients:["corn","rice","chicken","cheese","lime","cilantro"],
+    steps:["Char corn in a hot dry skillet.","Toss with mayo, lime, chili powder, cheese, cilantro.","Serve over rice with sliced chicken."] },
+
+  { name:"Baked Ziti", cuisine:"italian", effort:2, time:"40 min", cost:9,
+    ingredients:["pasta","marinara","cheese","parmesan"],
+    steps:["Boil pasta 2 min shy of done; toss with marinara.","Layer in a dish with cheese; parmesan on top.","Bake at 400°F for 20 min until browned."] },
+  { name:"Creamy Tuscan Chicken", cuisine:"italian", effort:2, time:"30 min", cost:11,
+    ingredients:["chicken","spinach","cream","garlic","parmesan","tomato"],
+    steps:["Sear seasoned chicken breasts; set aside.","Same pan: garlic, tomatoes, cream, parmesan into a sauce.","Return chicken, wilt in spinach, simmer 5 min."] },
+  { name:"Margherita Flatbreads", cuisine:"italian", effort:1, time:"15 min", cost:6,
+    ingredients:["bread","marinara","cheese","tomato"],
+    steps:["Split bread, spread marinara, top with cheese + tomato slices.","Bake at 450°F for 8–10 min.","Basil if you have it. Done."] },
+  { name:"Creamy Mushroom Pasta", cuisine:"italian", effort:2, time:"25 min", cost:8,
+    ingredients:["pasta","mushrooms","cream","garlic","parmesan"],
+    steps:["Brown mushrooms hard in butter — don't crowd the pan.","Add garlic, then cream and parmesan; loosen with pasta water.","Toss with pasta, season generously with black pepper."] },
+  { name:"Pasta e Ceci", cuisine:"italian", effort:1, time:"25 min", cost:6,
+    ingredients:["pasta","chickpeas","canned tomatoes","garlic","olive oil"],
+    steps:["Sizzle garlic in olive oil, add tomatoes + chickpeas (half mashed).","Add small pasta and water; simmer until pasta is done in the sauce.","One pot, deeply comforting."] },
+  { name:"Caprese Sandwiches", cuisine:"italian", effort:1, time:"10 min", cost:6,
+    ingredients:["bread","tomato","cheese","pesto"],
+    steps:["Spread pesto on good bread.","Layer thick tomato + cheese slices, salt the tomato.","Press or toast if you like it warm."] },
+
+  { name:"Chicken Caesar-ish Salad", cuisine:"american", effort:1, time:"15 min", cost:8,
+    ingredients:["chicken","lettuce","parmesan","bread"],
+    steps:["Torn bread + olive oil, toast into croutons.","Slice cooked chicken over chopped romaine.","Dress with lemon + mayo + parmesan (cheater Caesar)."] },
+  { name:"Turkey Melt", cuisine:"american", effort:1, time:"10 min", cost:6,
+    ingredients:["turkey","cheese","bread","butter","tomato"],
+    steps:["Butter the outside of the bread.","Stack turkey, cheese, tomato inside.","Grill low and slow until deep golden and melty."] },
+  { name:"Tuna Salad Sandwiches", cuisine:"american", effort:1, time:"10 min", cost:5,
+    ingredients:["tuna","bread","lettuce","onion"],
+    steps:["Mix tuna with mayo, minced onion, salt, pepper.","Pile onto bread with crisp lettuce.","Chips on the side. Lunch-for-dinner is valid."] },
+  { name:"Ham & Potato Skillet", cuisine:"american", effort:1, time:"20 min", cost:6,
+    ingredients:["ham","potato","onion","cheese","eggs"],
+    steps:["Crisp diced potatoes and onion in a skillet, 12 min.","Add ham; make wells and crack in eggs.","Lid on 3 min, cheese over the top."] },
+  { name:"Classic Meatloaf Night", cuisine:"american", effort:2, time:"60 min (15 hands-on)", cost:8,
+    ingredients:["ground beef","bread","onion","eggs","canned tomatoes"],
+    steps:["Mix beef, soaked bread, grated onion, egg, salt.","Shape into a loaf, glaze with tomato + a little sugar.","Bake at 375°F for 45 min; rest 10 before slicing."] },
+  { name:"Chicken Pot-Pie Skillet", cuisine:"american", effort:2, time:"40 min", cost:9,
+    ingredients:["chicken","carrot","potato","onion","cream","butter"],
+    steps:["Soften carrot, potato, onion in butter.","Add chicken and cream; simmer until thick and tender.","Top with torn toasted bread as a cheater crust."] },
+  { name:"Loaded Sweet Potatoes", cuisine:"american", effort:1, time:"45 min (5 hands-on)", cost:6,
+    ingredients:["sweet potato","black beans","cheese","yogurt","cilantro"],
+    steps:["Bake sweet potatoes at 425°F ~40 min (or microwave 8).","Split and stuff with warm beans + cheese.","Yogurt drizzle and cilantro on top."] },
+  { name:"Corn & Zucchini Fritters", cuisine:"american", effort:2, time:"25 min", cost:5,
+    ingredients:["zucchini","corn","eggs","cheese","bread"],
+    steps:["Grate zucchini and squeeze dry; mix with corn, egg, breadcrumbs, cheese.","Pan-fry spoonfuls 3 min per side until golden.","Eat with yogurt or hot sauce."] },
+  { name:"Roast Chicken & Root Veg", cuisine:"american", effort:2, time:"60 min (15 hands-on)", cost:10,
+    ingredients:["chicken","potato","carrot","onion","butter","lemon"],
+    steps:["Toss potatoes, carrots, onion with oil in a roasting pan; chicken on top.","Butter + lemon over the chicken; roast at 425°F ~45 min.","Rest 10 min while the veg re-crisps."] },
+
+  { name:"Veggie Tofu Stir-Fry", cuisine:"asian", effort:1, time:"20 min", cost:7,
+    ingredients:["tofu","broccoli","carrot","soy sauce","garlic","rice"],
+    steps:["Press and cube tofu; sear until golden on two sides.","Stir-fry broccoli + carrot hard, add garlic.","Soy sauce + splash of water, toss tofu back in, serve over rice."] },
+  { name:"Cheater Beef & Broccoli", cuisine:"chinese", effort:2, time:"25 min", cost:10,
+    ingredients:["ground beef","broccoli","soy sauce","garlic","rice"],
+    steps:["Brown beef in a screaming pan; push aside.","Add broccoli + splash of water, lid 2 min.","Soy + garlic + a little sugar; toss and serve over rice."] },
+  { name:"Egg Drop Soup Night", cuisine:"chinese", effort:1, time:"15 min", cost:4,
+    ingredients:["eggs","corn","soy sauce","garlic"],
+    steps:["Simmer broth (or water + bouillon) with garlic and corn.","Stream in beaten eggs while stirring slowly.","Season with soy; toast on the side."] },
+  { name:"Honey-Garlic Chicken", cuisine:"chinese", effort:2, time:"25 min", cost:9,
+    ingredients:["chicken","honey","garlic","soy sauce","rice","broccoli"],
+    steps:["Sear bite-size chicken until golden.","Add honey + soy + garlic; bubble into a glaze.","Serve over rice with steamed broccoli."] },
+
+  { name:"Crispy Chicken Rice Bowls", cuisine:"japanese", effort:2, time:"30 min", cost:9,
+    ingredients:["chicken","bread","rice","lettuce","soy sauce"],
+    steps:["Pound chicken thin; coat in toasted breadcrumbs.","Pan-fry 3–4 min per side until crackly.","Slice over rice + shredded lettuce; soy-mayo drizzle."] },
+  { name:"Soy-Butter Salmon Noodles", cuisine:"japanese", effort:2, time:"20 min", cost:11,
+    ingredients:["salmon","ramen noodles","butter","soy sauce","spinach"],
+    steps:["Sear salmon; flake into chunks.","Toss cooked noodles with butter + soy (that's the sauce).","Fold in spinach and salmon off the heat."] },
+
+  { name:"Peanut Noodles", cuisine:"thai", effort:1, time:"15 min", cost:6,
+    ingredients:["ramen noodles","peanut butter","soy sauce","lime","carrot"],
+    steps:["Whisk peanut butter, soy, lime, and hot noodle water into a sauce.","Toss with cooked noodles and carrot ribbons.","Good hot, great cold tomorrow."] },
+  { name:"Tofu Coconut Curry", cuisine:"thai", effort:2, time:"30 min", cost:9,
+    ingredients:["tofu","curry paste","coconut milk","bell pepper","rice"],
+    steps:["Fry curry paste 1 min; add coconut milk.","Simmer tofu + bell pepper in the sauce 10 min.","Serve over rice."] },
+
+  { name:"Quick Chicken Noodle Pho-ish", cuisine:"vietnamese", effort:2, time:"30 min", cost:8,
+    ingredients:["chicken","ramen noodles","onion","cilantro","lime"],
+    steps:["Simmer broth with charred onion + a cinnamon stick if you have one.","Poach chicken in the broth; slice.","Bowl with noodles, cilantro, big lime squeeze."] },
+  { name:"Banh-Mi-Style Sandwiches", cuisine:"vietnamese", effort:1, time:"15 min", cost:7,
+    ingredients:["bread","chicken","carrot","cucumber","cilantro"],
+    steps:["Quick-pickle carrot ribbons in vinegar + sugar (10 min).","Crisp bread; mayo generously.","Stack chicken, pickled carrot, cucumber, cilantro."] },
+
+  { name:"Chana Masala", cuisine:"indian", effort:2, time:"30 min", cost:6,
+    ingredients:["chickpeas","canned tomatoes","onion","garlic","curry paste","rice"],
+    steps:["Sauté onion + garlic; bloom the curry spices.","Add tomatoes and chickpeas; simmer 15 min until thick.","Serve over rice."] },
+  { name:"Butter Chicken-ish", cuisine:"indian", effort:2, time:"35 min", cost:10,
+    ingredients:["chicken","canned tomatoes","cream","butter","curry paste","rice"],
+    steps:["Sear chicken; set aside.","Simmer tomatoes + curry spices + butter 10 min; add cream.","Return chicken, simmer 10 more, serve over rice."] },
+  { name:"Curried Egg Rice Bowls", cuisine:"indian", effort:1, time:"15 min", cost:5,
+    ingredients:["eggs","rice","curry paste","onion","yogurt"],
+    steps:["Soft-boil or fry eggs.","Sizzle onion with curry spices; fold into rice.","Top with eggs and a yogurt drizzle."] },
+
+  { name:"Chickpea Salad Bowls", cuisine:"mediterranean", effort:1, time:"15 min", cost:6,
+    ingredients:["chickpeas","cucumber","tomato","feta","olive oil","lemon"],
+    steps:["Chop cucumber + tomato; toss with chickpeas.","Dress with olive oil, lemon, salt, oregano.","Feta over the top; bread on the side."] },
+  { name:"Lemon-Garlic Salmon", cuisine:"mediterranean", effort:2, time:"25 min", cost:12,
+    ingredients:["salmon","lemon","garlic","olive oil","potato","spinach"],
+    steps:["Roast baby potatoes at 425°F, 20 min.","Pan-sear salmon; finish with garlic, lemon, olive oil.","Wilt spinach in the same pan. Plate it all."] },
+  { name:"Hummus Dinner Plates", cuisine:"mediterranean", effort:1, time:"10 min", cost:5,
+    ingredients:["hummus","cucumber","tomato","bread","feta"],
+    steps:["Swoosh hummus across plates.","Pile on chopped cucumber, tomato, feta, olive oil.","Warm bread for scooping. No-cook dinner, zero shame."] },
+  { name:"Shakshuka", cuisine:"mediterranean", effort:2, time:"30 min", cost:6,
+    ingredients:["eggs","canned tomatoes","onion","bell pepper","feta","bread"],
+    steps:["Soften onion + bell pepper; add tomatoes + paprika + cumin, simmer 10 min.","Crack eggs into wells; lid on until just set.","Feta on top, bread for dipping."] },
+
+  { name:"Banana Oat Pancakes", cuisine:"breakfast", effort:2, time:"20 min", cost:4,
+    ingredients:["banana","oats","eggs","milk","butter","honey"],
+    steps:["Blitz oats to flour; mash in banana, eggs, splash of milk.","Cook small pancakes in butter, 2 min per side.","Honey over the stack."] },
+  { name:"Big Breakfast Plate", cuisine:"breakfast", effort:1, time:"15 min", cost:5,
+    ingredients:["eggs","bacon","bread","tomato"],
+    steps:["Bacon first; eggs fried in the drippings.","Toast + halved tomatoes seared cut-side down.","Breakfast at 7pm hits different."] },
+  { name:"Overnight Oats", cuisine:"breakfast", effort:1, time:"5 min (tonight)", cost:3,
+    ingredients:["oats","milk","yogurt","banana","honey","peanut butter"],
+    steps:["Jar: equal oats and milk, spoon of yogurt, honey, peanut butter.","Shake, fridge overnight.","Banana on top tomorrow — future you says thanks."] }
 ];
 
 /* ================= Cuisine adjacency (for "try something new" nudges) ================= */
@@ -836,9 +997,11 @@ function render(a) {
   $("results").style.display = "block";
 
   const opts = { month: "short", day: "numeric" };
+  const staleDays = Math.floor((Date.now() - a.anchor.getTime()) / 86400000);
   $("window-note").textContent =
     `Window: ${a.windowStart.toLocaleDateString(undefined, opts)} – ${a.anchor.toLocaleDateString(undefined, {...opts, year:"numeric"})}` +
-    ` · ${a.txns.length} food transactions found`;
+    ` · ${a.txns.length} food transactions found` +
+    (staleDays > 7 ? ` · ⚠ newest transaction is ${staleDays} days old — export a fresh statement for sharper suggestions` : "");
 
   const totalFood = a.totals.grocery + a.totals.restaurant + a.totals.delivery;
   $("stat-grid").innerHTML = [
@@ -1400,7 +1563,8 @@ function updatePhotoStatus() {
   const el = $("photo-pantry-status");
   if (!p || !p.items.length) { el.innerHTML = ""; $("zone-photo").classList.remove("has-data"); return; }
   const when = new Date(p.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  el.innerHTML = `✓ ${p.items.length} pantry item${p.items.length === 1 ? "" : "s"} from your photo (${when}) · <a href="#" id="clear-photo" style="color:#b3402a">clear</a>`;
+  const stale = (Date.now() - p.ts) / 86400000 > 7 ? " ⚠ getting stale — re-scan when you restock ·" : " ·";
+  el.innerHTML = `✓ ${p.items.length} pantry item${p.items.length === 1 ? "" : "s"} from your photo (${when})${stale} <a href="#" id="clear-photo" style="color:#b3402a">clear</a>`;
   $("zone-photo").classList.add("has-data");
   el.querySelector("#clear-photo").addEventListener("click", e => {
     e.preventDefault();
@@ -1763,6 +1927,88 @@ $("btn-clear-history").addEventListener("click", e => {
     setTimeout(() => { delete b.dataset.armed; b.textContent = "Clear history"; }, 4000);
   }
 });
+
+/* ---- backup & restore ---- */
+
+async function exportData() {
+  const ls = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith("nextmeal.")) ls[k] = localStorage.getItem(k);
+  }
+  return {
+    app: "nextmeal", version: 1, exported: new Date().toISOString(),
+    localStorage: ls,
+    examples: examplesCache.map(e => ({
+      label: e.label, vec: [...e.vec], negative: !!e.negative, thumb: e.thumb || null, ts: e.ts
+    }))
+  };
+}
+
+$("btn-export").addEventListener("click", async () => {
+  const data = await exportData();
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `nextmeal-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  $("backup-note").textContent =
+    `✓ Backup saved — ${Object.keys(data.localStorage).length} data sets, ${data.examples.length} learned examples`;
+});
+
+$("btn-import").addEventListener("click", () => $("file-import").click());
+$("file-import").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app !== "nextmeal" || !data.localStorage) throw new Error("not a NextMeal backup");
+    Object.entries(data.localStorage).forEach(([k, v]) => {
+      if (k.startsWith("nextmeal.") && typeof v === "string") localStorage.setItem(k, v);
+    });
+    if (Array.isArray(data.examples)) {
+      await deleteExamples();
+      for (const ex of data.examples) {
+        if (ex && ex.label && Array.isArray(ex.vec))
+          await saveExample({ label: ex.label, vec: new Float32Array(ex.vec), negative: !!ex.negative, thumb: ex.thumb, ts: ex.ts || Date.now() });
+      }
+    }
+    // reload all in-memory state from the restored storage
+    household = loadHousehold();
+    assignments = loadAssignments();
+    selectedEaters = new Set(household.members.map(m => m.id));
+    try {
+      const sel = JSON.parse(localStorage.getItem(EATERS_KEY));
+      if (Array.isArray(sel) && sel.length) selectedEaters = new Set(sel);
+    } catch {}
+    renderHousehold(); renderHistory(); updatePhotoStatus();
+    await refreshExamples();
+    runAnalysis();
+    $("backup-note").textContent = "✓ Backup restored.";
+  } catch (err) {
+    console.error(err);
+    $("backup-note").textContent = "⚠ That file isn't a valid NextMeal backup.";
+  }
+  e.target.value = "";
+});
+
+/* ---- durability: persistent storage + service worker ---- */
+
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persisted()
+    .then(async p => p || navigator.storage.persist())
+    .then(granted => {
+      $("storage-note").textContent = granted
+        ? "✓ Persistent storage granted — the browser won't auto-evict your data. A backup is still smart."
+        : "⚠ Persistent storage not granted — some browsers (notably Safari) can evict data after ~7 days of disuse. Export a backup.";
+    })
+    .catch(() => {});
+}
+
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("sw.js").catch(err => console.warn("SW registration failed:", err));
+}
 
 renderHousehold();
 renderHistory();
