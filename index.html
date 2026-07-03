@@ -225,16 +225,17 @@
     <p class="sub">Everything is analyzed locally in your browser — nothing is uploaded to a server.</p>
     <div class="upload-grid">
       <div class="dropzone" id="zone-statement">
-        <label class="zone-title">🏦 Bank statement (CSV)</label>
-        <div class="hint">Export from your bank: columns for date, description, amount. Header names are auto-detected.</div>
-        <input type="file" id="file-statement" accept=".csv,.txt,.tsv,text/csv,text/plain,text/comma-separated-values,application/csv,application/vnd.ms-excel,application/octet-stream">
+        <label class="zone-title">🏦 Bank statement (CSV, PDF, or photo)</label>
+        <div class="hint">CSV export, PDF statement, or a screenshot of your transactions — PDFs and images are read on-device, nothing is uploaded. Extracted text appears below so you can fix any misreads.</div>
+        <input type="file" id="file-statement" accept=".csv,.txt,.tsv,.pdf,application/pdf,image/*,text/csv,text/plain,text/comma-separated-values,application/csv,application/vnd.ms-excel,application/octet-stream" multiple>
+        <div class="ocr-note" id="statement-note"></div>
         <div class="file-status" id="status-statement"></div>
         <textarea id="paste-statement" placeholder="…or paste CSV here, e.g.&#10;Date,Description,Amount&#10;06/24/2026,KROGER #442,-54.23"></textarea>
       </div>
       <div class="dropzone" id="zone-receipts">
         <label class="zone-title">🧾 Grocery receipts (text or photos)</label>
         <div class="hint">Paste receipt text, upload .txt files, or upload <b>photos of receipts</b> (JPG/PNG) — they're read on-device with OCR, nothing is uploaded.</div>
-        <input type="file" id="file-receipts" accept=".txt,.csv,.png,.jpg,.jpeg,.webp,.bmp,image/*,text/plain,text/csv,application/csv,application/vnd.ms-excel,application/octet-stream" multiple>
+        <input type="file" id="file-receipts" accept=".txt,.csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,image/*,application/pdf,text/plain,text/csv,application/csv,application/vnd.ms-excel,application/octet-stream" multiple>
         <div class="ocr-note" id="ocr-note"></div>
         <div class="file-status" id="status-receipts"></div>
         <textarea id="paste-receipts" placeholder="…or paste receipt text here, e.g.&#10;KROGER 06/24/2026&#10;CHKN BREAST 1.5LB   7.49&#10;SHRD CHEDDAR        2.99"></textarea>
@@ -844,6 +845,39 @@ function parseStatement(text) {
   return txns;
 }
 
+/* Loose parser for non-CSV statements (PDF text, OCR'd screenshots): finds
+   date + description + amount per line; handles a trailing running-balance column. */
+const MONEY_RE = /-?\$?\(?\d{1,3}(?:,\d{3})*\.\d{2}\)?-?/g;
+const STMT_SKIP = /\b(balance|total|beginning|ending|statement|available|minimum|interest|apr|summary)\b|page \d|payment due|account number/i;
+function parseStatementLoose(text) {
+  const txns = [];
+  const tomorrow = Date.now() + 86400000;
+  const year = new Date().getFullYear();
+  for (const raw of text.split(/\n/)) {
+    const line = raw.trim().replace(/\s{2,}/g, " ");
+    if (line.length < 8 || STMT_SKIP.test(line)) continue;
+    const money = line.match(MONEY_RE);
+    if (!money) continue;
+    const dm = line.match(/(\d{4}-\d{1,2}-\d{1,2})|(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)|([A-Z][a-z]{2,8}\.?\s+\d{1,2}(?:,?\s+\d{4})?)/);
+    if (!dm) continue;
+    let dateStr = dm[0];
+    if (/^\d{1,2}[\/\-]\d{1,2}$/.test(dateStr)) dateStr += "/" + year;            // "06/28"
+    else if (/^[A-Z][a-z]{2,8}\.?\s+\d{1,2}$/.test(dateStr)) dateStr += ", " + year; // "Jun 28"
+    let date = parseDate(dateStr);
+    if (!date) continue;
+    if (date.getTime() > tomorrow) date = new Date(date.getFullYear() - 1, date.getMonth(), date.getDate());
+    // two trailing money tokens usually means "amount balance" — take the first of them
+    const amt = parseAmount(money.length >= 2 ? money[money.length - 2] : money[money.length - 1]);
+    if (isNaN(amt) || amt === 0) continue;
+    let desc = line.replace(dm[0], "");
+    money.forEach(m => { desc = desc.replace(m, ""); });
+    desc = desc.replace(/\s{2,}/g, " ").trim();
+    if (desc.length < 3) continue;
+    txns.push({ date, desc, amount: Math.abs(amt) });
+  }
+  return txns;
+}
+
 function categorizeTxn(desc) {
   const d = desc.toLowerCase();
   if (DELIVERY_KEYWORDS.some(k => d.includes(k))) return "delivery";
@@ -1296,6 +1330,63 @@ async function ocrImages(files, onStatus) {
   return texts;
 }
 
+/* ================= PDF statements (pdf.js, on-device) ================= */
+
+let pdfLibPromise = null;
+async function getPdfLib() {
+  if (!pdfLibPromise) {
+    pdfLibPromise = (async () => {
+      let local = false;
+      try { local = (await fetch("vendor/pdf.min.js", { method: "HEAD" })).ok; } catch {}
+      const base = local ? abs("vendor/") : "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/";
+      if (!window.pdfjsLib) await loadScript(base + "pdf.min.js");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.js";
+      return pdfjsLib;
+    })().catch(err => { pdfLibPromise = null; throw err; });
+  }
+  return pdfLibPromise;
+}
+
+async function extractPdfText(file, onStatus) {
+  const lib = await getPdfLib();
+  const doc = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const maxPages = Math.min(doc.numPages, 10);
+  const all = [];
+  for (let p = 1; p <= maxPages; p++) {
+    onStatus && onStatus(`Reading PDF page ${p} of ${maxPages}…`);
+    const page = await doc.getPage(p);
+    const tc = await page.getTextContent();
+    // rebuild visual lines: group text items by rounded Y, order by X
+    const rows = new Map();
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const y = Math.round(it.transform[5]);
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push({ x: it.transform[4], s: it.str });
+    }
+    [...rows.entries()].sort((a, b) => b[0] - a[0]).forEach(([, row]) =>
+      all.push(row.sort((a, b) => a.x - b.x).map(r => r.s).join(" ")));
+  }
+  let text = all.join("\n");
+  if (text.replace(/\s/g, "").length < 40) {
+    // scanned PDF with no text layer: rasterize pages and OCR them
+    const worker = await getOcrWorker();
+    const ocrTexts = [];
+    for (let p = 1; p <= maxPages; p++) {
+      onStatus && onStatus(`Scanned PDF — running OCR on page ${p} of ${maxPages}…`);
+      const page = await doc.getPage(p);
+      const vp = page.getViewport({ scale: 2 });
+      const c = document.createElement("canvas");
+      c.width = vp.width; c.height = vp.height;
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      const { data } = await worker.recognize(c);
+      ocrTexts.push(data.text);
+    }
+    text = ocrTexts.join("\n");
+  }
+  return text;
+}
+
 /* ================= Food detection in fridge/pantry photos ================= */
 
 let detectorPromise = null;
@@ -1581,19 +1672,47 @@ let uploadedReceipts = "";
 
 const isImage = f => (f.type && f.type.startsWith("image/")) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name);
 
+const isPdf = f => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+
 $("file-statement").addEventListener("change", async e => {
-  if (!e.target.files.length) return;
-  uploadedStatement = (await Promise.all([...e.target.files].map(f => f.text()))).join("\n\n");
-  $("status-statement").textContent = `✓ ${e.target.files[0].name} loaded`;
-  $("zone-statement").classList.add("has-data");
+  const files = [...e.target.files];
+  if (!files.length) return;
+  const note = $("statement-note");
+  const texts = [];
+  try {
+    for (const f of files) {
+      if (isPdf(f)) {
+        texts.push(await extractPdfText(f, s => { note.textContent = s; }));
+      } else if (isImage(f)) {
+        texts.push((await ocrImages([f], s => { note.textContent = s; }))[0]);
+      } else {
+        texts.push(await f.text());
+      }
+    }
+    note.textContent = "";
+  } catch (err) {
+    console.error(err);
+    note.textContent = "⚠ Couldn't read that file — paste the transactions as text instead.";
+  }
+  uploadedStatement = texts.filter(t => t && t.trim()).join("\n\n");
+  if (uploadedStatement) {
+    $("paste-statement").value = uploadedStatement;   // shown for review/correction
+    $("status-statement").textContent = `✓ ${files.length} file${files.length > 1 ? "s" : ""} loaded`;
+    $("zone-statement").classList.add("has-data");
+  }
 });
 
 $("file-receipts").addEventListener("change", async e => {
   const files = [...e.target.files];
   if (!files.length) return;
   const images = files.filter(isImage);
-  const textFiles = files.filter(f => !isImage(f));
+  const pdfs = files.filter(f => !isImage(f) && isPdf(f));
+  const textFiles = files.filter(f => !isImage(f) && !isPdf(f));
   const texts = await Promise.all(textFiles.map(f => f.text()));
+  for (const f of pdfs) {
+    try { texts.push(await extractPdfText(f, s => { $("ocr-note").textContent = s; })); }
+    catch (err) { console.error(err); $("ocr-note").textContent = "⚠ Couldn't read a PDF receipt — paste its text instead."; }
+  }
 
   if (images.length) {
     try {
@@ -1796,9 +1915,10 @@ $("btn-analyze").addEventListener("click", () => {
     $("error-msg").textContent = "Add a bank statement first (or click “Try with sample data”).";
     return;
   }
-  const txns = parseStatement(stmtText);
+  let txns = parseStatement(stmtText);
+  if (txns.length === 0) txns = parseStatementLoose(stmtText);   // PDF/OCR text isn't CSV
   if (txns.length === 0) {
-    $("error-msg").textContent = "Couldn't find date / description / amount columns in that statement.";
+    $("error-msg").textContent = "Couldn't find transactions (a date, description, and amount) in that statement.";
     return;
   }
   lastTxns = txns;

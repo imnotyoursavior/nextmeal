@@ -1,0 +1,42 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+5 0 obj
+<< /Length 543 >>
+stream
+BT /F1 11 Tf 40 760 Td 18 TL
+(ACME BANK - Account Statement) Tj T*
+(Transactions) Tj T*
+(06/30/2026  CHIPOTLE #1204 ONLINE      -13.85    1,204.51) Tj T*
+(06/29/2026  KROGER #442                -61.34    1,218.36) Tj T*
+(06/27/2026  DD *DOORDASH TACOS EL REY  -24.60    1,279.70) Tj T*
+(06/25/2026  SHELL OIL 5573             -41.20    1,304.30) Tj T*
+(06/22/2026  TRADER JOE'S #58           -47.88    1,345.50) Tj T*
+(06/20/2026  TAQUERIA GUADALAJARA       -18.40    1,393.38) Tj T*
+(Ending balance                          1,204.51) Tj T*
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000309 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+903
+%%EOF

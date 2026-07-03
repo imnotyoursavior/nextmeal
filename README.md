@@ -13,9 +13,13 @@ No build step, no dependencies. Either:
 
 ## How to use
 
-1. **Bank statement** — upload or paste a CSV export from your bank. Column headers
-   (Date / Description / Amount, or Payee / Merchant / Debit, etc.) are auto-detected;
-   headerless CSVs are sniffed. Negative, positive, `$`, and `(parens)` amounts all work.
+1. **Bank statement** — upload or paste a CSV export, a **PDF statement**, or a **photo/
+   screenshot** of your transactions. CSVs get column auto-detection (Date / Description /
+   Amount, headerless sniffing, `$`/`(parens)`/negative amounts). PDFs are read on-device
+   with pdf.js (scanned PDFs fall back to OCR); images go through OCR. Non-CSV text uses a
+   loose line parser that finds date + description + amount, handles trailing
+   running-balance columns, and infers missing years. Extracted text lands in the textarea
+   for review before analysis. (`test-statement.pdf` / `test-statement.png` are demo files.)
 2. **Grocery receipts** — upload or paste receipt text, **or upload photos of receipts**
    (JPG/PNG/WEBP/BMP). Photos are read with on-device OCR (Tesseract.js — vendored in
    `vendor/`, so it works offline; falls back to CDN if the folder is missing). Extracted
