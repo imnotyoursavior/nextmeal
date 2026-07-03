@@ -30,6 +30,16 @@ No build step, no dependencies. Either:
    into your working pantry (shown with a 📷 marker, shared across the household, persisted
    with the photo date, re-scans merge rather than replace, one-click clear).
    Try it with `test-banana.jpg` (object detection) or `test-fridge-labels.png` (label reading).
+
+   **The photo scanner learns.** Every confirmation is a training signal: checked items
+   become positive visual examples (a MobileNet embedding of that image region, stored in
+   IndexedDB), unchecked items become corrections, and **teach mode** lets you drag a box
+   around any item in the photo and name it — including things no detector knows. Future
+   scans compare every candidate region (including generic bottles/jars/boxes) against your
+   personal example library by cosine similarity, surfacing "🧠 remembered" items. It learns
+   *your* specific products — your milk carton, your salsa jar — and gets reliable at ~3
+   examples per item. A "What I've learned" panel shows examples per item with thumbnails,
+   per-item forget, and full reset. All learning stays on this device.
 4. **Household (optional)** — solo users can skip this entirely. Add family members to
    unlock per-person profiles: an "who were these groceries for?" panel appears after
    analysis where each receipt item can be assigned to a person (or left Shared), and a
@@ -92,6 +102,6 @@ With a single member the app behaves exactly like the solo version — all house
 ## Files
 
 - `index.html` — the entire app (markup, styles, parsers, preference model, meal database, history engine, photo detection).
-- `vendor/` — Tesseract.js OCR engine (~40 MB) plus TensorFlow.js + COCO-SSD model (~19 MB in `vendor/coco-ssd/`) for fully offline receipt reading and fridge-photo food detection.
+- `vendor/` — Tesseract.js OCR engine (~40 MB), TensorFlow.js + COCO-SSD model (~19 MB in `vendor/coco-ssd/`), and MobileNet v2 feature extractor (~2.7 MB in `vendor/mobilenet/`) for fully offline receipt reading, fridge-photo food detection, and personal food-appearance learning.
 - `sample-receipt.png` — generated test receipt image for trying the OCR.
 - `test-banana.jpg` / `test-fridge-labels.png` — test photos for the fridge/pantry feature (banana photo: Evan-Amos, public domain).

@@ -189,6 +189,17 @@
   .check-chip:has(input:not(:checked)) { opacity: .45; }
   #manual-item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
 
+  /* Teach mode + learned panel */
+  #teach-canvas {
+    max-width: 100%; border-radius: 10px; border: 1px solid var(--border);
+    cursor: crosshair; touch-action: none; display: block; margin-top: 8px;
+  }
+  #teach-name { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
+  .learn-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: .92rem; flex-wrap: wrap; }
+  .learn-row img { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
+  .learn-row .meta { color: var(--muted); font-size: .84rem; }
+  .learn-row .forget { margin: 0 0 0 auto; }
+
   .more-ideas { margin-top: 6px; }
   .more-ideas li { margin-bottom: 5px; font-size: .92rem; }
   .more-ideas .cost { color: var(--muted); font-size: .84rem; }
@@ -235,6 +246,15 @@
             <input id="manual-item" placeholder="Add an item we missed (e.g. tofu)" maxlength="30">
             <button class="ghost" id="btn-add-manual">+ Add</button>
             <button class="primary" id="btn-confirm-photo" style="padding:9px 18px; font-size:.9rem">✓ Add checked items to my pantry</button>
+          </div>
+        </div>
+        <div id="teach-area" style="display:none">
+          <div class="hint" style="margin-top:12px">🧠 <b>Teach mode:</b> drag a box around any item in the photo and name it — NextMeal learns what <i>your</i> items look like and recognizes them in future photos. Confirming or unchecking suggestions above teaches it too.</div>
+          <canvas id="teach-canvas"></canvas>
+          <div class="btn-row" style="margin-top:6px">
+            <input id="teach-name" placeholder="What's in the box? (e.g. salsa)" maxlength="30">
+            <button class="ghost" id="btn-teach">🧠 Teach</button>
+            <span class="ocr-note" id="teach-note"></span>
           </div>
         </div>
         <div class="file-status" id="photo-pantry-status"></div>
@@ -297,6 +317,14 @@
       <ul class="more-ideas" id="more-ideas"></ul>
     </section>
   </div>
+
+  <!-- LEARNED FOOD APPEARANCES (persists across visits) -->
+  <section class="card" id="learned-card" style="display:none">
+    <h2>🧠 What I've learned</h2>
+    <p class="sub">Every confirmed detection, correction, and teach-mode box builds a visual memory of your foods — stored on this device only. Items with 3+ examples get recognized reliably in new photos.</p>
+    <div id="learned-list"></div>
+    <button class="danger" id="btn-reset-learning">Forget everything</button>
+  </section>
 
   <!-- MEAL HISTORY (persists across visits) -->
   <section class="card" id="history-card" style="display:none">
@@ -1132,7 +1160,142 @@ function fileToImage(file) {
   });
 }
 
-let photoCandidates = new Map(); // ingredient key -> { key, via: "spotted"|"label"|"manual" }
+/* ================= On-device learning (personal food recognizer) ================= */
+/* Confirmed detections, corrections, and teach-mode boxes become labeled MobileNet
+   embeddings stored in IndexedDB. New photos are matched against them (cosine
+   similarity), so the app learns what YOUR specific items look like over time. */
+
+const SIM_THRESHOLD = 0.75;   // min cosine similarity to a positive example
+let embedderPromise = null;
+let examplesCache = [];       // in-memory mirror of the IndexedDB example store
+
+let idbPromise = null;
+function idb() {
+  if (!idbPromise) {
+    idbPromise = new Promise((res, rej) => {
+      const r = indexedDB.open("nextmeal", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("examples", { keyPath: "id", autoIncrement: true });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  return idbPromise;
+}
+async function saveExample(ex) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("examples", "readwrite");
+    tx.objectStore("examples").add(ex);
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function deleteExamples(label) {   // label omitted = delete all
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("examples", "readwrite");
+    const rq = tx.objectStore("examples").openCursor();
+    rq.onsuccess = () => {
+      const c = rq.result;
+      if (c) { if (!label || c.value.label === label) c.delete(); c.continue(); }
+    };
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function refreshExamples() {
+  try {
+    const db = await idb();
+    examplesCache = await new Promise((res, rej) => {
+      const rq = db.transaction("examples").objectStore("examples").getAll();
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+  } catch (err) { console.error(err); examplesCache = []; }
+  renderLearnedPanel();
+}
+
+async function getEmbedder() {
+  if (!embedderPromise) {
+    embedderPromise = (async () => {
+      let local = false;
+      try { local = (await fetch("vendor/mobilenet/model.json", { method: "HEAD" })).ok; } catch {}
+      if (!window.tf) await loadScript(local ? abs("vendor/tf.min.js")
+        : "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4/dist/tf.min.js");
+      try { tf.env().set("WEBGL_DELETE_TEXTURE_THRESHOLD", 0); } catch {}
+      return local
+        ? tf.loadGraphModel(abs("vendor/mobilenet/model.json"))
+        : tf.loadGraphModel("https://tfhub.dev/google/tfjs-model/imagenet/mobilenet_v2_050_224/feature_vector/3/default/1", { fromTFHub: true });
+    })().catch(err => { embedderPromise = null; throw err; });
+  }
+  return embedderPromise;
+}
+
+function masterCanvasFrom(img) {   // downscaled working copy (detection + crops)
+  const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.naturalWidth * scale);
+  c.height = Math.round(img.naturalHeight * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+function expandBox(box, canvas, factor) {   // grow a label-text box to cover the product
+  const [x, y, w, h] = box;
+  const cx = x + w / 2, cy = y + h / 2, nw = w * factor, nh = Math.max(h * factor, nw * 0.6);
+  const nx = Math.max(0, cx - nw / 2), ny = Math.max(0, cy - nh / 2);
+  return [nx, ny, Math.min(nw, canvas.width - nx), Math.min(nh, canvas.height - ny)];
+}
+function cropToCanvas(master, box) {
+  const [x, y, w, h] = box;
+  const c = document.createElement("canvas");
+  c.width = 224; c.height = 224;
+  c.getContext("2d").drawImage(master,
+    Math.max(0, x), Math.max(0, y), Math.max(1, Math.min(w, master.width - x)), Math.max(1, Math.min(h, master.height - y)),
+    0, 0, 224, 224);
+  return c;
+}
+function thumbFrom(crop) {
+  const c = document.createElement("canvas");
+  c.width = 56; c.height = 56;
+  c.getContext("2d").drawImage(crop, 0, 0, 56, 56);
+  return c.toDataURL("image/jpeg", 0.6);
+}
+
+async function embedCanvas(c) {
+  const model = await getEmbedder();
+  return tf.tidy(() => {
+    const t = tf.browser.fromPixels(c).toFloat().div(255).expandDims(0);
+    return model.predict(t).dataSync();   // Float32Array feature vector
+  });
+}
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  return dot / (Math.sqrt(na * nb) || 1);
+}
+function matchEmbedding(vec) {   // best label whose positives beat its corrections
+  const byLabel = {};
+  for (const ex of examplesCache) {
+    const s = cosine(vec, ex.vec);
+    const e = byLabel[ex.label] = byLabel[ex.label] || { pos: 0, neg: 0 };
+    if (ex.negative) e.neg = Math.max(e.neg, s); else e.pos = Math.max(e.pos, s);
+  }
+  let best = null;
+  for (const [label, { pos, neg }] of Object.entries(byLabel)) {
+    if (pos >= SIM_THRESHOLD && pos > neg && (!best || pos > best.sim)) best = { label, sim: pos };
+  }
+  return best;
+}
+
+function wordsWithBoxes(data) {   // flatten tesseract block tree defensively
+  const words = [];
+  (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l =>
+    (l.words || []).forEach(w => { if (w.text && w.bbox) words.push({ text: w.text, bbox: w.bbox }); }))));
+  return words;
+}
+
+let photoCandidates = new Map(); // key -> { key, via: "spotted"|"label"|"learned"|"manual", crop? }
+let lastMaster = null;           // working canvas of the most recent photo (teach mode)
 
 async function processPhotoFiles(files) {
   const note = $("photo-note");
@@ -1149,40 +1312,86 @@ async function processPhotoFiles(files) {
 
   for (let i = 0; i < files.length; i++) {
     const which = files.length > 1 ? ` ${i + 1} of ${files.length}` : "";
+
+    let master, origW;
+    try {
+      const img = await fileToImage(files[i]);
+      origW = img.naturalWidth;
+      master = masterCanvasFrom(img);
+      URL.revokeObjectURL(img.src);
+      lastMaster = master;
+    } catch (err) { console.error("image load failed:", err); continue; }
+
+    // pass 1: object detection (produce etc.)
+    let preds = [];
     if (detector) {
       note.textContent = `Looking for foods in photo${which}…`;
-      try {
-        const img = await fileToImage(files[i]);
-        const preds = await detector.detect(img, 20);
-        URL.revokeObjectURL(img.src);
-        preds.filter(p => p.score >= 0.45).forEach(p => {
-          const key = COCO_FOOD_MAP[p.class];
-          if (key && !photoCandidates.has(key)) photoCandidates.set(key, { key, via: "spotted" });
-        });
-      } catch (err) { console.error("detect failed:", err); }
+      try { preds = await detector.detect(master, 20, 0.2); }
+      catch (err) { console.error("detect failed:", err); }
     }
+    preds.filter(p => p.score >= 0.45).forEach(p => {
+      const key = COCO_FOOD_MAP[p.class];
+      if (key && !photoCandidates.has(key))
+        photoCandidates.set(key, { key, via: "spotted", crop: { master, box: p.bbox } });
+    });
+
+    // pass 2: packaging labels via OCR (with word positions for learning)
+    let wordRegions = [];
     try {
       note.textContent = `Reading labels in photo${which}…`;
       const worker = await getOcrWorker();
-      const { data } = await worker.recognize(files[i]);
+      const { data } = await worker.recognize(files[i], {}, { text: true, blocks: true });
+      const s = master.width / origW;   // OCR ran on the original-size image
+      wordRegions = wordsWithBoxes(data).map(w => ({
+        text: w.text,
+        box: [w.bbox.x0 * s, w.bbox.y0 * s, (w.bbox.x1 - w.bbox.x0) * s, (w.bbox.y1 - w.bbox.y0) * s]
+      }));
       ingredientsInText(data.text).forEach(k => {
-        if (!photoCandidates.has(k)) photoCandidates.set(k, { key: k, via: "label" });
+        if (!photoCandidates.has(k)) {
+          const w = wordRegions.find(w => ingredientsInText(w.text).has(k));
+          photoCandidates.set(k, { key: k, via: "label",
+            crop: w ? { master, box: expandBox(w.box, master, 2.5) } : null });
+        }
       });
     } catch (err) { console.error("label OCR failed:", err); }
+
+    // pass 3: personal recognizer — match regions against learned examples
+    if (examplesCache.length) {
+      note.textContent = `Checking photo${which} against learned items…`;
+      try {
+        const regions = [
+          ...preds.filter(p => p.score >= 0.2).map(p => p.bbox),   // includes generic bottles/boxes
+          ...wordRegions.map(w => expandBox(w.box, master, 2.5))
+        ].slice(0, 24);
+        for (const box of regions) {
+          const vec = await embedCanvas(cropToCanvas(master, box));
+          const m = matchEmbedding(vec);
+          if (m && !photoCandidates.has(m.label))
+            photoCandidates.set(m.label, { key: m.label, via: "learned", crop: { master, box } });
+        }
+      } catch (err) { console.error("learned match failed:", err); }
+    }
   }
 
   note.textContent = photoCandidates.size
     ? `Found ${photoCandidates.size} likely ingredient${photoCandidates.size === 1 ? "" : "s"} — uncheck anything that's wrong, then confirm.`
-    : "Couldn't confidently spot ingredients in that photo — add them manually below.";
+    : "Couldn't confidently spot ingredients in that photo — add them manually or use teach mode below.";
   $("photo-detected").style.display = "block";
   renderPhotoChecks();
+  $("teach-area").style.display = lastMaster ? "block" : "none";
+  drawTeachCanvas();
 }
 
+const VIA_ICON = { spotted: "👁", label: "🏷", learned: "🧠", manual: "✍" };
+const VIA_TITLE = {
+  spotted: "recognized by object detection", label: "read from packaging text",
+  learned: "recognized from your past confirmations", manual: "added by you"
+};
 function renderPhotoChecks() {
   $("photo-checks").innerHTML = [...photoCandidates.values()].map(c => `
-    <label class="check-chip" title="${c.via === "spotted" ? "recognized by object detection" : c.via === "label" ? "read from packaging text" : "added by you"}">
+    <label class="check-chip" title="${VIA_TITLE[c.via] || ""}">
       <input type="checkbox" data-key="${esc(c.key)}" checked>
-      ${c.via === "spotted" ? "👁" : c.via === "label" ? "🏷" : "✍"} ${esc(c.key)}
+      ${VIA_ICON[c.via] || "🍴"} ${esc(c.key)}
     </label>`).join("");
 }
 
@@ -1261,14 +1470,136 @@ $("btn-add-manual").addEventListener("click", () => {
 });
 $("manual-item").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("btn-add-manual").click(); } });
 
-$("btn-confirm-photo").addEventListener("click", () => {
-  const keys = [...document.querySelectorAll("#photo-checks input:checked")].map(i => i.dataset.key);
+$("btn-confirm-photo").addEventListener("click", async () => {
+  const boxes = [...document.querySelectorAll("#photo-checks input")];
+  const keys = boxes.filter(i => i.checked).map(i => i.dataset.key);
   const prev = loadPhotoPantry();
   savePhotoPantry({ ts: Date.now(), items: [...new Set([...(prev ? prev.items : []), ...keys])] });
   $("photo-detected").style.display = "none";
   $("photo-note").textContent = "";
   updatePhotoStatus();
   runAnalysis();
+
+  // learn from this confirmation: checked regions = positive examples, unchecked = corrections
+  try {
+    let learned = 0;
+    for (const i of boxes) {
+      const c = photoCandidates.get(i.dataset.key);
+      if (!c || !c.crop) continue;
+      const crop = cropToCanvas(c.crop.master, c.crop.box);
+      const vec = await embedCanvas(crop);
+      await saveExample({ label: c.key, vec, negative: !i.checked,
+        thumb: i.checked ? thumbFrom(crop) : null, ts: Date.now() });
+      learned++;
+    }
+    if (learned) await refreshExamples();
+  } catch (err) { console.error("learning skipped:", err); }
+});
+
+/* ---- teach mode ---- */
+
+let teachSel = null, teachDrag = null;
+
+function drawTeachCanvas() {
+  const cv = $("teach-canvas");
+  if (!lastMaster) return;
+  cv.width = lastMaster.width; cv.height = lastMaster.height;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(lastMaster, 0, 0);
+  if (teachSel) {
+    ctx.strokeStyle = "#e2711d";
+    ctx.lineWidth = Math.max(3, cv.width / 300);
+    ctx.strokeRect(teachSel.x, teachSel.y, teachSel.w, teachSel.h);
+  }
+}
+const teachPos = e => {
+  const cv = $("teach-canvas"), r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height };
+};
+$("teach-canvas").addEventListener("pointerdown", e => {
+  teachDrag = teachPos(e);
+  e.target.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+$("teach-canvas").addEventListener("pointermove", e => {
+  if (!teachDrag) return;
+  const p = teachPos(e);
+  teachSel = { x: Math.min(teachDrag.x, p.x), y: Math.min(teachDrag.y, p.y),
+               w: Math.abs(p.x - teachDrag.x), h: Math.abs(p.y - teachDrag.y) };
+  drawTeachCanvas();
+});
+$("teach-canvas").addEventListener("pointerup", () => { teachDrag = null; });
+
+$("btn-teach").addEventListener("click", async () => {
+  const noteEl = $("teach-note");
+  const name = $("teach-name").value.trim().toLowerCase();
+  if (!name) { noteEl.textContent = "Name the item first."; return; }
+  if (!teachSel || teachSel.w < 12 || teachSel.h < 12) { noteEl.textContent = "Drag a box around the item first."; return; }
+  const known = INGREDIENT_DICT.find(i => i.key === name || i.pats.some(p => name.includes(p)));
+  const key = known ? known.key : name;
+  try {
+    noteEl.textContent = "Learning…";
+    const crop = cropToCanvas(lastMaster, [teachSel.x, teachSel.y, teachSel.w, teachSel.h]);
+    const vec = await embedCanvas(crop);
+    await saveExample({ label: key, vec, negative: false, thumb: thumbFrom(crop), ts: Date.now() });
+    await refreshExamples();
+    if (!photoCandidates.has(key)) photoCandidates.set(key, { key, via: "manual" });
+    renderPhotoChecks();
+    $("photo-detected").style.display = "block";
+    const n = examplesCache.filter(e => e.label === key && !e.negative).length;
+    noteEl.textContent = `✓ Learned "${key}" — ${n} example${n === 1 ? "" : "s"} now`;
+    $("teach-name").value = "";
+    teachSel = null;
+    drawTeachCanvas();
+  } catch (err) {
+    console.error(err);
+    noteEl.textContent = "⚠ Couldn't learn — embedding model unavailable.";
+  }
+});
+$("teach-name").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("btn-teach").click(); } });
+
+/* ---- learned panel ---- */
+
+function renderLearnedPanel() {
+  const byLabel = {};
+  examplesCache.forEach(ex => {
+    const e = byLabel[ex.label] = byLabel[ex.label] || { pos: 0, neg: 0, thumbs: [] };
+    if (ex.negative) e.neg++;
+    else { e.pos++; if (ex.thumb && e.thumbs.length < 5) e.thumbs.push(ex.thumb); }
+  });
+  const labels = Object.keys(byLabel).sort();
+  $("learned-card").style.display = labels.length ? "block" : "none";
+  if (!labels.length) return;
+  $("learned-list").innerHTML = labels.map(l => {
+    const e = byLabel[l];
+    return `<div class="learn-row">
+      <b style="text-transform:capitalize">${esc(l)}</b>
+      <span class="meta">${e.pos} example${e.pos === 1 ? "" : "s"}${e.neg ? `, ${e.neg} correction${e.neg === 1 ? "" : "s"}` : ""}${e.pos >= 3 ? " · reliable ✓" : ""}</span>
+      ${e.thumbs.map(t => `<img src="${t}" alt="${esc(l)}">`).join("")}
+      <button class="log-btn forget" data-forget="${esc(l)}">forget</button>
+    </div>`;
+  }).join("");
+}
+
+$("learned-list").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-forget]");
+  if (!b) return;
+  await deleteExamples(b.dataset.forget);
+  await refreshExamples();
+});
+
+$("btn-reset-learning").addEventListener("click", async e => {
+  const b = e.target;
+  if (b.dataset.armed) {
+    delete b.dataset.armed;
+    b.textContent = "Forget everything";
+    await deleteExamples();
+    await refreshExamples();
+  } else {
+    b.dataset.armed = "1";
+    b.textContent = "Really forget all learned foods? Click again to confirm";
+    setTimeout(() => { delete b.dataset.armed; b.textContent = "Forget everything"; }, 4000);
+  }
 });
 
 $("btn-sample").addEventListener("click", () => {
@@ -1436,6 +1767,7 @@ $("btn-clear-history").addEventListener("click", e => {
 renderHousehold();
 renderHistory();
 updatePhotoStatus();
+refreshExamples();
 </script>
 </body>
 </html>
