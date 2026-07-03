@@ -204,6 +204,22 @@
   .learn-row .meta { color: var(--muted); font-size: .84rem; }
   .learn-row .forget { margin: 0 0 0 auto; }
 
+  /* Kitchen twin */
+  .twin-group { margin-bottom: 12px; }
+  .twin-group .lbl { font-weight: 700; font-size: .9rem; margin-bottom: 6px; }
+  .chip.out { background: #fdeae5; color: #b3402a; }
+  .chip.soon { background: #fdf3d7; color: #9a6b00; }
+  .chip .note { font-weight: 400; opacity: .85; font-size: .78rem; }
+  .rescue-note { font-size: .86rem; color: #9a6b00; font-weight: 600; }
+
+  /* AI Chef */
+  #chef-output {
+    white-space: pre-wrap; background: #fdfcfa; border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; margin-top: 12px; font-size: .95rem; display: none;
+  }
+  #chef-input { border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; font-size: .92rem; flex: 1; min-width: 220px; }
+  #chef-model { border: 1px solid var(--border); border-radius: 8px; padding: 9px; font-size: .9rem; background: #fff; }
+
   .more-ideas { margin-top: 6px; }
   .more-ideas li { margin-bottom: 5px; font-size: .92rem; }
   .more-ideas .cost { color: var(--muted); font-size: .84rem; }
@@ -301,6 +317,16 @@
       <div class="assign-list" id="assign-list"></div>
     </section>
 
+    <section class="card" id="twin-card" style="display:none">
+      <h2>🔮 Kitchen twin — what's probably in your kitchen right now</h2>
+      <p class="sub">Predicted from purchase dates, shelf life, and your rebuy rhythm — no photo needed. Receipts and fridge scans sharpen it over time.</p>
+      <div id="twin-groups"></div>
+      <div class="btn-row">
+        <button class="ghost" id="btn-copy-list" style="display:none">📋 Copy shopping list</button>
+        <span class="ocr-note" id="twin-note"></span>
+      </div>
+    </section>
+
     <section class="card">
       <h2>😋 Your taste profile</h2>
       <p class="sub">Cuisines ranked by how often (and how recently) you chose them.</p>
@@ -320,6 +346,33 @@
     <section class="card">
       <h2>💡 More ideas from your profile</h2>
       <ul class="more-ideas" id="more-ideas"></ul>
+    </section>
+
+    <section class="card" id="chef-card" style="display:none">
+      <h2>🧑‍🍳 AI Chef <span style="font-size:.72rem; color:var(--muted); font-weight:600">on-device · beta</span></h2>
+      <p class="sub" id="chef-sub">A small language model that runs entirely in your browser via WebGPU. It sees your pantry, kitchen twin, tastes, and history — and generates recipes just for you. Your data still never leaves this device; only the model is downloaded (once).</p>
+      <div id="chef-setup">
+        <div class="btn-row">
+          <select id="chef-model">
+            <option value="Llama-3.2-1B-Instruct">Llama 3.2 1B — recommended (~900 MB)</option>
+            <option value="SmolLM2-360M-Instruct">SmolLM2 360M — small &amp; fast, simpler answers (~400 MB)</option>
+          </select>
+          <button class="primary" id="btn-chef-enable" style="padding:9px 18px; font-size:.92rem">Enable AI Chef (one-time download)</button>
+        </div>
+        <div class="ocr-note" id="chef-progress" style="margin-top:8px"></div>
+      </div>
+      <div id="chef-ready" style="display:none">
+        <div class="btn-row">
+          <button class="ghost chef-preset" data-q="Suggest one dinner I can make right now from my kitchen.">🍳 Dinner from my kitchen</button>
+          <button class="ghost chef-preset" data-q="What should I cook tonight to use up the ingredients that are about to go bad?">🥬 Use up expiring items</button>
+          <button class="ghost chef-preset" data-q="Suggest something new that I have not eaten lately but that matches my tastes.">🎲 Surprise me</button>
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <input id="chef-input" placeholder="Ask anything… e.g. 'something light for two, 20 minutes'" maxlength="200">
+          <button class="primary" id="btn-chef-ask" style="padding:9px 18px; font-size:.92rem">Ask</button>
+        </div>
+        <div id="chef-output"></div>
+      </div>
     </section>
   </div>
 
@@ -845,6 +898,77 @@ function parseStatement(text) {
   return txns;
 }
 
+/* ================= Kitchen twin (predictive pantry) ================= */
+/* Infers what's probably in the kitchen — and how fresh — from dated purchases,
+   per-ingredient shelf life, and the household's rebuy rhythm. */
+
+const PURCH_KEY = "nextmeal.purchases.v1";
+function loadPurchases() {
+  try { const p = JSON.parse(localStorage.getItem(PURCH_KEY)); return Array.isArray(p) ? p : []; }
+  catch { return []; }
+}
+function recordPurchases(receiptItems, anchor) {
+  const log = loadPurchases();
+  const seen = new Set(log.map(e => e.key + "|" + e.d));
+  let changed = false;
+  receiptItems.forEach(it => {
+    if (!it.ingredient) return;
+    const d = (it.date || anchor).toISOString().slice(0, 10);
+    const id = it.ingredient.key + "|" + d;
+    if (!seen.has(id)) { log.push({ key: it.ingredient.key, d }); seen.add(id); changed = true; }
+  });
+  const trimmed = log.slice(-600);
+  if (changed) localStorage.setItem(PURCH_KEY, JSON.stringify(trimmed));
+  return trimmed;
+}
+
+/* fridge-realistic shelf life in days; anything unlisted is a long-keeping staple */
+const SHELF_LIFE = {
+  milk: 7, eggs: 28, cheese: 21, yogurt: 14, cream: 10, butter: 60,
+  chicken: 3, "ground beef": 3, salmon: 2, shrimp: 2, bacon: 7, sausage: 7, ham: 5, turkey: 5, tofu: 7,
+  lettuce: 7, spinach: 5, broccoli: 7, tomato: 6, cucumber: 7, avocado: 4, banana: 5,
+  apple: 21, orange: 14, lime: 14, lemon: 14, onion: 30, garlic: 60, potato: 30,
+  "sweet potato": 30, carrot: 21, "bell pepper": 7, zucchini: 7, mushrooms: 5, cilantro: 5,
+  bread: 5, tortillas: 14, pesto: 21, feta: 21, hummus: 10, parmesan: 60,
+  salsa: 30, "tortilla chips": 30
+};
+const DEFAULT_SHELF = 120;
+
+function buildKitchenTwin(pantryKeys, photoData, purchases) {
+  const now = Date.now();
+  const byKey = {};
+  purchases.forEach(e => {
+    const t = new Date(e.d).getTime();
+    if (!isNaN(t)) (byKey[e.key] = byKey[e.key] || []).push(t);
+  });
+  const twin = {};   // key -> { status: "stocked"|"soon"|"out", daysLeft, note }
+  for (const key of pantryKeys) {
+    const shelf = SHELF_LIFE[key] || DEFAULT_SHELF;
+    const buys = (byKey[key] || []).sort((a, b) => a - b);
+    let lastSeen = buys.length ? buys[buys.length - 1] : null;
+    // a fridge-photo sighting is authoritative "it's there right now"
+    if (photoData && photoData.items.includes(key)) lastSeen = Math.max(lastSeen || 0, photoData.ts);
+    if (!lastSeen) { twin[key] = { status: "stocked", daysLeft: null }; continue; }
+    const ageDays = (now - lastSeen) / 86400000;
+    const freshLeft = shelf - ageDays;
+    let interval = null;   // typical days between rebuys
+    if (buys.length >= 2) {
+      const gaps = buys.slice(1).map((t, i) => (t - buys[i]) / 86400000).filter(g => g > 0.5);
+      if (gaps.length) { gaps.sort((a, b) => a - b); interval = gaps[Math.floor(gaps.length / 2)]; }
+    }
+    if (freshLeft <= 0 || (interval && ageDays > interval * 1.25)) {
+      twin[key] = { status: "out", daysLeft: 0,
+        note: freshLeft <= 0 ? `bought ${Math.round(ageDays)}d ago, keeps ~${shelf}d` : `you rebuy every ~${Math.round(interval)}d` };
+    } else if (freshLeft <= 2.5 && shelf <= 21) {
+      const dl = Math.max(1, Math.round(freshLeft));
+      twin[key] = { status: "soon", daysLeft: dl, note: `~${dl} day${dl === 1 ? "" : "s"} left` };
+    } else {
+      twin[key] = { status: "stocked", daysLeft: Math.round(freshLeft) };
+    }
+  }
+  return twin;
+}
+
 /* Loose parser for non-CSV statements (PDF text, OCR'd screenshots): finds
    date + description + amount per line; handles a trailing running-balance column. */
 const MONEY_RE = /-?\$?\(?\d{1,3}(?:,\d{3})*\.\d{2}\)?-?/g;
@@ -902,9 +1026,13 @@ function cuisinesOf(desc) {
 const RECEIPT_SKIP = /subtotal|total|tax|change|tender|visa|debit|credit|cash|balance|savings|coupon|loyalty|rewards|thank|approval|auth|card|account|item.?count|qty/i;
 function parseReceipts(text) {
   const items = [];
+  let currentDate = null;   // header lines like "KROGER #442 06/29/2026" date the items below
   for (const rawLine of text.split(/\n/)) {
     const line = rawLine.trim();
-    if (!line || RECEIPT_SKIP.test(line)) continue;
+    if (!line) continue;
+    const dm = line.match(/(\d{4}-\d{1,2}-\d{1,2})|(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+    if (dm) { const d = parseDate(dm[0]); if (d) currentDate = d; }
+    if (RECEIPT_SKIP.test(line)) continue;
     const m = line.match(/^(.*?[a-zA-Z].*?)\s+\$?(\d{1,4}\.\d{2})\s*[A-Za-z*]{0,2}\s*$/);
     if (!m) continue;
     const name = m[1].trim();
@@ -914,7 +1042,7 @@ function parseReceipts(text) {
     for (const ing of INGREDIENT_DICT) {
       if (ing.pats.some(p => lower.includes(p))) { ingredient = ing; break; }
     }
-    items.push({ name, price, ingredient });
+    items.push({ name, price, ingredient, date: currentDate });
   }
   return items;
 }
@@ -978,6 +1106,10 @@ function analyze(txnsAll, receiptItems) {
   });
   photoKeys.forEach(k => pantry.set(k, (pantry.get(k) || 0) + 1));
 
+  // kitchen twin: predicted freshness/availability for everything in the pantry
+  const purchases = recordPurchases(receiptItems, anchor);
+  const twin = buildKitchenTwin([...pantry.keys()], photoPantryData, purchases);
+
   // Frequent merchants
   const merchCount = {};
   txns.forEach(t => {
@@ -994,16 +1126,18 @@ function analyze(txnsAll, receiptItems) {
     totals: { grocery: sum(byCat.grocery), restaurant: sum(byCat.restaurant), delivery: sum(byCat.delivery) },
     avgTickets: { restaurant: avg(byCat.restaurant), delivery: avg(byCat.delivery) },
     cuisineScores, pantry, topMerchants,
-    allReceiptItems: receiptItems, photoKeys
+    allReceiptItems: receiptItems, photoKeys, twin
   };
 }
 
 function scoreMeal(meal, a, hs) {
   const maxCuisine = Math.max(1, ...Object.values(a.cuisineScores));
   const cuisineAff = (a.cuisineScores[meal.cuisine] || 0) / maxCuisine;
-  const have = meal.ingredients.filter(i => a.pantry.has(i));
+  // "have" excludes items the kitchen twin thinks are gone; "rescue" = expiring items this meal uses
+  const have = meal.ingredients.filter(i => a.pantry.has(i) && (!a.twin[i] || a.twin[i].status !== "out"));
+  const rescue = meal.ingredients.filter(i => a.twin[i] && a.twin[i].status === "soon");
   const pantryRatio = a.pantry.size ? have.length / meal.ingredients.length : 0;
-  let score = 2.2 * cuisineAff + 2.8 * pantryRatio;
+  let score = 2.2 * cuisineAff + 2.8 * pantryRatio + 0.35 * Math.min(2, rescue.length);
 
   // learned preference: cuisines the user actually logged eating get boosted
   const histMax = Math.max(1, ...Object.values(hs.cuisineCount));
@@ -1017,7 +1151,7 @@ function scoreMeal(meal, a, hs) {
     if (days < 7) { score -= 2.2; resting = true; }
     else if (days < 14) score -= 0.9;
   }
-  return { score, have, cuisineAff, resting, eatenBefore: !!last };
+  return { score, have, rescue, cuisineAff, resting, eatenBefore: !!last };
 }
 
 /* ================= Rendering ================= */
@@ -1066,7 +1200,10 @@ function render(a) {
     `<span class="chip ${a.photoKeys.has(k) ? "photo" : ""}">${a.photoKeys.has(k) ? "📷 " : ""}${esc(k)}</span>`).join("");
 
   // ------- Who's-eating context -------
+  lastAnalysis = a;
   renderAssignCard(a);
+  renderTwinCard(a);
+  renderChefCard();
   const names = eaterNames();
   const nEaters = Math.max(1, names.length);
   $("lane-sub").textContent = household.members.length > 1
@@ -1105,6 +1242,7 @@ function render(a) {
       <h3>${esc(r.meal.name)}</h3>
       <div class="meal-meta">${cap(r.meal.cuisine)} · ${r.meal.time} · ~${fmt$(r.meal.cost * Math.max(0.5, nEaters / 2))} for ${nEaters} ${nEaters === 1 ? "person" : "people"}</div>
       ${r.have.length ? `<div class="match-note">✓ You already have ${r.have.length} of ${r.meal.ingredients.length} ingredients</div>` : ""}
+      ${r.rescue && r.rescue.length ? `<div class="rescue-note">🥬 Uses up: ${r.rescue.map(i => `${esc(i)} (${a.twin[i].note})`).join(", ")}</div>` : ""}
       <div class="meal-why">${customWhy || whyFor(r)}</div>
       <details><summary>Show recipe (${r.meal.steps.length} steps)</summary>
         <div class="meal-meta" style="margin-top:6px">Needs: ${r.meal.ingredients.map(i => a.pantry.has(i) ? `<b>${esc(i)}✓</b>` : esc(i)).join(", ")}</div>
@@ -1183,6 +1321,33 @@ function render(a) {
 function countCuisine(a, cuisine) {
   return a.txns.filter(t => (t.category === "restaurant" || t.category === "delivery") &&
     cuisinesOf(t.desc).includes(cuisine)).length || 1;
+}
+
+function renderTwinCard(a) {
+  const entries = Object.entries(a.twin);
+  const withTimeline = entries.filter(([, v]) => v.daysLeft !== null);
+  $("twin-card").style.display = withTimeline.length ? "block" : "none";
+  if (!withTimeline.length) return;
+
+  const out = entries.filter(([, v]) => v.status === "out");
+  const soon = entries.filter(([, v]) => v.status === "soon");
+  const stocked = entries.filter(([, v]) => v.status === "stocked");
+  const chip = (k, v, cls) =>
+    `<span class="chip ${cls}">${esc(k)}${v.note ? ` <span class="note">· ${esc(v.note)}</span>` : ""}</span>`;
+
+  let html = "";
+  if (soon.length) html += `<div class="twin-group"><div class="lbl">⏳ Use these soon</div><div class="pantry-chips">${soon.map(([k, v]) => chip(k, v, "soon")).join("")}</div></div>`;
+  if (out.length) html += `<div class="twin-group"><div class="lbl">❌ Probably out (your next shopping list)</div><div class="pantry-chips">${out.map(([k, v]) => chip(k, v, "out")).join("")}</div></div>`;
+  html += `<div class="twin-group"><details><summary style="cursor:pointer; font-weight:600; font-size:.9rem">✓ Likely stocked (${stocked.length})</summary><div class="pantry-chips" style="margin-top:8px">${stocked.map(([k, v]) => chip(k, v, "")).join("")}</div></details></div>`;
+  $("twin-groups").innerHTML = html;
+
+  const listBtn = $("btn-copy-list");
+  listBtn.style.display = out.length ? "inline-block" : "none";
+  listBtn.onclick = async () => {
+    const list = out.map(([k]) => "• " + k).join("\n");
+    try { await navigator.clipboard.writeText(list); $("twin-note").textContent = "✓ Shopping list copied"; }
+    catch { $("twin-note").textContent = list.replace(/\n/g, "  "); }
+  };
 }
 
 function renderAssignCard(a) {
@@ -2112,6 +2277,111 @@ $("file-import").addEventListener("change", async e => {
   }
   e.target.value = "";
 });
+
+/* ---- AI Chef: on-device LLM via WebGPU (opt-in) ---- */
+
+const CHEF_KEY = "nextmeal.aichef.v1";
+let lastAnalysis = null;
+let chefEngine = null;
+let chefLoading = false;
+
+const CHEF_SYS = `You are NextMeal's private on-device chef. Suggest meals using ONLY the pantry items listed unless you explicitly say "you'd need to buy: ...". Prioritize the use-these-soon items. Respect who is eating and their favorite cuisines, and avoid recently eaten meals. Answer in under 220 words: one meal (name, one line on why it fits this household, numbered steps, approximate time and cost). Plain text only.`;
+
+function buildChefContext() {
+  if (!lastAnalysis) return "No spending analysis available yet.";
+  const a = lastAnalysis;
+  const names = eaterNames();
+  const soon = Object.entries(a.twin).filter(([, v]) => v.status === "soon").map(([k, v]) => `${k} (${v.note})`);
+  const out = new Set(Object.entries(a.twin).filter(([, v]) => v.status === "out").map(([k]) => k));
+  const stocked = [...a.pantry.keys()].filter(k => !out.has(k));
+  const cuisines = Object.entries(a.cuisineScores).filter(([c]) => c !== "asian")
+    .sort((x, y) => y[1] - x[1]).slice(0, 4).map(([c]) => c);
+  const recent = loadHistory().slice(-5).map(e => e.name);
+  return `Cooking for: ${names.join(", ") || "one person"} (${Math.max(1, names.length)} people).
+Pantry on hand: ${stocked.join(", ") || "unknown — suggest common-staple meals"}.
+Use these soon: ${soon.join(", ") || "nothing urgent"}.
+Probably out of: ${[...out].join(", ") || "nothing known"}.
+Favorite cuisines (most to least): ${cuisines.join(", ") || "unknown"}.
+Recently eaten (avoid repeats): ${recent.join(", ") || "none logged"}.`;
+}
+
+function renderChefCard() {
+  const card = $("chef-card");
+  card.style.display = "block";
+  if (!navigator.gpu) {
+    $("chef-sub").textContent = "Your browser doesn't support WebGPU, which the on-device model needs. Everything else works without it — try Chrome or Edge (or a recent Safari) for the AI Chef.";
+    $("chef-setup").style.display = "none";
+    return;
+  }
+  if (chefEngine) { $("chef-setup").style.display = "none"; $("chef-ready").style.display = "block"; return; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHEF_KEY));
+    if (saved && saved.model) {
+      $("chef-model").value = saved.model;
+      $("btn-chef-enable").textContent = "Load AI Chef (already downloaded)";
+    }
+  } catch {}
+}
+
+$("btn-chef-enable").addEventListener("click", async () => {
+  if (chefLoading) return;
+  chefLoading = true;
+  const btn = $("btn-chef-enable");
+  btn.disabled = true;
+  $("chef-progress").textContent = "Starting up…";
+  try {
+    // pick the quantization the GPU actually supports (f16 needs the shader-f16 extension)
+    const adapter = await navigator.gpu.requestAdapter();
+    const suffix = adapter && adapter.features.has("shader-f16") ? "q4f16_1" : "q4f32_1";
+    const model = `${$("chef-model").value}-${suffix}-MLC`;
+    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+    chefEngine = await webllm.CreateMLCEngine(model, {
+      initProgressCallback: p => { $("chef-progress").textContent = p.text || "Loading…"; }
+    });
+    localStorage.setItem(CHEF_KEY, JSON.stringify({ model: $("chef-model").value }));
+    $("chef-setup").style.display = "none";
+    $("chef-ready").style.display = "block";
+    $("chef-progress").textContent = "";
+  } catch (err) {
+    console.error(err);
+    $("chef-progress").textContent = "⚠ Couldn't load the model: " + (err && err.message ? err.message : err);
+    btn.disabled = false;
+  }
+  chefLoading = false;
+});
+
+async function askChef(question) {
+  if (!chefEngine || !question.trim()) return;
+  const out = $("chef-output");
+  out.style.display = "block";
+  out.textContent = "…thinking (entirely on this device)";
+  try {
+    const chunks = await chefEngine.chat.completions.create({
+      messages: [
+        { role: "system", content: CHEF_SYS + "\n\nThis household's data:\n" + buildChefContext() },
+        { role: "user", content: question.trim() }
+      ],
+      stream: true, temperature: 0.7, max_tokens: 320,
+      frequency_penalty: 0.6, presence_penalty: 0.4   // small models loop without these
+    });
+    let text = "";
+    for await (const c of chunks) {
+      text += (c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content) || "";
+      out.textContent = text;
+    }
+    if (!text.trim()) out.textContent = "⚠ The model returned nothing — try rephrasing.";
+  } catch (err) {
+    console.error(err);
+    out.textContent = "⚠ Generation failed: " + (err && err.message ? err.message : err);
+  }
+}
+
+$("chef-card").addEventListener("click", e => {
+  const b = e.target.closest("button.chef-preset");
+  if (b) askChef(b.dataset.q);
+});
+$("btn-chef-ask").addEventListener("click", () => { askChef($("chef-input").value); });
+$("chef-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); askChef($("chef-input").value); } });
 
 /* ---- durability: persistent storage + service worker ---- */
 

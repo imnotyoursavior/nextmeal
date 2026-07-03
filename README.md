@@ -103,6 +103,35 @@ single meals:
 
 With a single member the app behaves exactly like the solo version — all household UI stays hidden.
 
+## Kitchen twin (predictive pantry)
+
+NextMeal keeps a dated purchase log (`nextmeal.purchases.v1`) built from receipt dates and
+infers what's probably in your kitchen *right now* — no photo needed:
+
+- **Freshness**: per-ingredient shelf-life model (milk ~7d, spinach ~5d, rice ~forever)
+  aged from the last purchase date. Items nearing the end show as **⏳ use soon**; expired
+  ones as **❌ probably out**.
+- **Rebuy rhythm**: once an item has been bought 2+ times, the median interval predicts
+  when you'll run out even before it spoils.
+- **Photo override**: a fridge-scan sighting is authoritative — it resets the clock.
+- **Integration**: meals that rescue expiring items get boosted (with a "🥬 Uses up" note),
+  "probably out" items stop counting toward pantry matches, and the out-list becomes a
+  one-click copyable shopping list.
+
+## AI Chef (on-device LLM, opt-in beta)
+
+An actual language model running entirely in the browser via WebGPU (WebLLM/MLC). It sees
+the pantry, kitchen twin, household, tastes, and meal history — and generates recipes
+conversationally. Your data still never leaves the device; only the model weights are
+downloaded (once, then cached).
+
+- Opt-in with a size choice: Llama 3.2 1B (~900 MB, recommended) or SmolLM2 360M (~400 MB).
+- Quantization is auto-selected per GPU (`q4f16_1` when the `shader-f16` extension exists,
+  `q4f32_1` otherwise) so older/integrated GPUs work.
+- Preset prompts ("Dinner from my kitchen", "Use up expiring items", "Surprise me") plus
+  free-form questions; responses stream in. Requires WebGPU (recent Chrome/Edge/Safari);
+  without it the card explains and the rest of the app is unaffected.
+
 ## Backup, durability & offline (PWA)
 
 Everything NextMeal knows lives in browser storage, which browsers can evict (Safari purges
