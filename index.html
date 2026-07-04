@@ -187,7 +187,12 @@
   .assign-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: .9rem; }
   .assign-row .ing { color: var(--green); font-size: .8rem; }
   .assign-row .price { color: var(--muted); font-size: .82rem; }
-  .assign-row select { margin-left: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: .86rem; background: #fff; }
+  .assign-chips { margin-left: auto; display: flex; gap: 5px; flex-wrap: wrap; }
+  .owner-chip {
+    border: 1.2px solid var(--border); background: #fff; color: var(--muted);
+    border-radius: 999px; padding: 3px 11px; font-size: .8rem; font-weight: 600; cursor: pointer;
+  }
+  .owner-chip.on { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
 
   /* Fridge/pantry photo */
   .chip.photo { background: var(--purple-soft); color: var(--purple); }
@@ -332,7 +337,8 @@
 
     <section class="card" id="assign-card" style="display:none">
       <h2>🧑‍🍳 Who were these groceries for?</h2>
-      <p class="sub">Assign receipt items to a person, or leave them Shared. Choices are remembered, and suggestions update instantly.</p>
+      <p class="sub"><b>Shared</b> (the default) means anyone in the household might eat it. Tap names to mark an item as bought for one or more specific people — like a kid's yogurt or one person's protein shake mix. When someone isn't at the table, their personal items drop out of the pantry and suggestions; shared items always count. Choices are remembered for future receipts.</p>
+      <p class="sub" id="assign-summary" style="font-weight:600"></p>
       <div class="assign-list" id="assign-list"></div>
     </section>
 
@@ -788,10 +794,11 @@ let selectedEaters = new Set((() => {
 })());
 
 const normItem = s => s.toLowerCase().replace(/\s+/g, " ").trim();
-function assignmentFor(name) {
-  const a = assignments[normItem(name)];
-  if (!a || a === "shared") return "shared";
-  return household.members.some(m => m.id === a) ? a : "shared"; // removed member -> shared
+function assignmentFor(name) {   // -> array of owner member-ids; [] means Shared
+  let a = assignments[normItem(name)];
+  if (!a || a === "shared") return [];
+  if (!Array.isArray(a)) a = [a];   // migrate legacy single-owner format
+  return a.filter(id => household.members.some(m => m.id === id)); // removed members fall back to shared
 }
 const eaterNames = () => household.members.filter(m => selectedEaters.has(m.id)).map(m => m.name);
 
@@ -1069,10 +1076,10 @@ function parseReceipts(text) {
 /* ================= Analysis ================= */
 
 function analyze(txnsAll, receiptItems) {
-  // only groceries available to whoever's eating: shared items + selected members' items
+  // only groceries available to whoever's eating: shared items + any selected owner's items
   const availableItems = receiptItems.filter(it => {
-    const a = assignmentFor(it.name);
-    return a === "shared" || selectedEaters.has(a);
+    const owners = assignmentFor(it.name);
+    return owners.length === 0 || owners.some(id => selectedEaters.has(id));
   });
 
   // 30-day window anchored at the most recent transaction (or today)
@@ -1377,15 +1384,31 @@ function renderAssignCard(a) {
   });
   $("assign-card").style.display = multi && rows.size ? "block" : "none";
   if (!multi || !rows.size) return;
-  $("assign-list").innerHTML = [...rows.values()].map(it => `
-    <div class="assign-row">
+
+  $("assign-list").innerHTML = [...rows.values()].map(it => {
+    const owners = assignmentFor(it.name);
+    return `<div class="assign-row">
       <span>${esc(it.name)}</span><span class="ing">→ ${esc(it.ingredient.key)}</span>
       <span class="price">${fmt$(it.price)}</span>
-      <select data-item="${esc(normItem(it.name))}">
-        <option value="shared">Shared</option>
-        ${household.members.map(m => `<option value="${m.id}" ${assignmentFor(it.name) === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
-      </select>
-    </div>`).join("");
+      <span class="assign-chips" data-item="${esc(normItem(it.name))}">
+        <button class="owner-chip ${owners.length === 0 ? "on" : ""}" data-owner="shared" title="Anyone might eat this">Shared</button>
+        ${household.members.map(m =>
+          `<button class="owner-chip ${owners.includes(m.id) ? "on" : ""}" data-owner="${m.id}" title="Bought for ${esc(m.name)}">${esc(m.name)}</button>`).join("")}
+      </span>
+    </div>`;
+  }).join("");
+
+  // summary: "14 shared · 2 for Sarah · 1 for Timmy"
+  const counts = { shared: 0 };
+  household.members.forEach(m => { counts[m.id] = 0; });
+  [...rows.values()].forEach(it => {
+    const owners = assignmentFor(it.name);
+    if (!owners.length) counts.shared++;
+    else owners.forEach(id => { counts[id]++; });
+  });
+  $("assign-summary").textContent =
+    `${counts.shared} shared` +
+    household.members.map(m => counts[m.id] ? ` · ${counts[m.id]} for ${m.name}` : "").join("");
 }
 
 /* ================= Sample data (dates relative to today) ================= */
@@ -2186,10 +2209,16 @@ $("eater-list").addEventListener("click", e => {
   runAnalysis();
 });
 
-$("assign-list").addEventListener("change", e => {
-  const s = e.target.closest("select[data-item]");
-  if (!s) return;
-  assignments[s.dataset.item] = s.value;
+$("assign-list").addEventListener("click", e => {
+  const b = e.target.closest("button.owner-chip");
+  if (!b) return;
+  const item = b.closest(".assign-chips").dataset.item;
+  let owners = assignments[item];
+  owners = !owners || owners === "shared" ? [] : (Array.isArray(owners) ? [...owners] : [owners]);
+  if (b.dataset.owner === "shared") owners = [];                                  // back to Shared
+  else if (owners.includes(b.dataset.owner)) owners = owners.filter(id => id !== b.dataset.owner);
+  else owners.push(b.dataset.owner);
+  assignments[item] = owners.length ? owners : "shared";
   saveAssignments();
   runAnalysis();
 });
